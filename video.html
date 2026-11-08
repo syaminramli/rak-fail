@@ -1,0 +1,262 @@
+<!doctype html><html lang="ms"><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>WA Video Compressor</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: single compact column, one card per step, sticky-free; fits one phone screen */
+:root{
+  --bg:#eef2ef; --surface:#ffffff; --fg:#14201a; --muted:#5d6e65; --line:#d5ded8;
+  --accent:#0f8a5f; --accent-fg:#ffffff; --warn:#b4560b; --bad:#b42318; --track:#dfe7e2;
+  --display:"Archivo",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0e1411; --surface:#16201b; --fg:#e4ece7; --muted:#8fa197; --line:#26332c;
+  --accent:#34c38f; --accent-fg:#06140e; --warn:#f0a35a; --bad:#f2786d; --track:#22302a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1411; --surface:#16201b; --fg:#e4ece7; --muted:#8fa197; --line:#26332c;
+  --accent:#34c38f; --accent-fg:#06140e; --warn:#f0a35a; --bad:#f2786d; --track:#22302a; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--display);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px}
+main{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+h1{font-size:20px;font-weight:800;margin:0;letter-spacing:-.01em}
+.limit{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.pick{display:flex;align-items:center;justify-content:center;gap:8px;min-height:56px;border:1.5px dashed var(--line);border-radius:10px;
+  font-weight:700;cursor:pointer;color:var(--accent)}
+.pick:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.pick input{position:absolute;opacity:0;width:1px;height:1px}
+.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.meta div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.k{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700}
+.v{font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label.f{display:flex;flex-direction:column;gap:4px;min-width:0}
+select{font:inherit;font-size:15px;padding:9px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
+.btn{font:inherit;font-weight:800;font-size:16px;border:0;border-radius:10px;padding:13px;background:var(--accent);color:var(--accent-fg);cursor:pointer;width:100%}
+.btn.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.note{font-size:13px;color:var(--muted);margin:0;line-height:1.45}
+.note.warn{color:var(--warn)} .note.bad{color:var(--bad)} .note.ok{color:var(--accent)}
+.bar{height:8px;background:var(--track);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+video{width:100%;max-height:38vh;border-radius:8px;background:#000;display:block}
+.est{font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums}
+</style>
+
+<main>
+  <header><h1>WA Video Compressor</h1><span class="limit">limit 32 MB</span></header>
+
+  <section class="card">
+    <label class="pick"><input type="file" id="file" accept="video/*"><span id="pickTxt">Pilih video</span></label>
+    <div class="meta">
+      <div><span class="k">Size</span><span class="v" id="mSize">–</span></div>
+      <div><span class="k">Duration</span><span class="v" id="mDur">–</span></div>
+      <div><span class="k">Resolution</span><span class="v" id="mRes">–</span></div>
+    </div>
+    <p class="note" id="srcNote">Contoh: video 2 min 85 MB → keluar ~29 MB, 720p. Semua proses dalam phone, tak upload mana-mana.</p>
+  </section>
+
+  <section class="card">
+    <div class="row">
+      <label class="f"><span class="k">Target size</span>
+        <select id="target"><option value="30" selected>30 MB (safe)</option><option value="25">25 MB</option><option value="16">16 MB</option><option value="8">8 MB</option></select></label>
+      <label class="f"><span class="k">Max quality</span>
+        <select id="res"><option value="1080">1080p</option><option value="720" selected>720p</option><option value="480">480p</option><option value="360">360p</option></select></label>
+    </div>
+    <p class="est" id="est">Video bitrate: –</p>
+    <button class="btn" id="go" disabled>Compress</button>
+  </section>
+
+  <section class="card" id="runCard" hidden>
+    <video id="vid" playsinline></video>
+    <div class="bar"><i id="barFill"></i></div>
+    <p class="est" id="prog">0%</p>
+    <p class="note warn" id="runNote">Jangan lock screen / tukar app. Proses ikut panjang video (real-time).</p>
+    <button class="btn ghost" id="stop">Cancel</button>
+  </section>
+
+  <section class="card" id="outCard" hidden>
+    <div class="meta">
+      <div><span class="k">Output</span><span class="v" id="oSize">–</span></div>
+      <div><span class="k">Saved</span><span class="v" id="oSaved">–</span></div>
+      <div><span class="k">Format</span><span class="v" id="oFmt">–</span></div>
+    </div>
+    <p class="note" id="outNote"></p>
+    <button class="btn" id="share" hidden>Share ke WhatsApp…</button>
+    <div class="btns">
+      <button class="btn" id="save">Save</button>
+      <button class="btn ghost" id="again">Redo</button>
+    </div>
+  </section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const LIMIT=32*1024*1024;
+let file=null,srcURL=null,dur=0,vw=0,vh=0,outBlob=null,outExt='mp4',cancelled=false,rec=null,wake=null,actx=null;
+
+const fmtMB=b=>(b/1048576).toFixed(1)+' MB';
+const fmtT=s=>{s=Math.round(s);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
+
+function pickMime(){
+  const c=['video/mp4;codecs=avc1.42E01F,mp4a.40.2','video/mp4;codecs=avc1,mp4a','video/mp4','video/webm;codecs=vp8,opus','video/webm'];
+  if(typeof MediaRecorder==='undefined')return null;
+  return c.find(m=>MediaRecorder.isTypeSupported(m))||null;
+}
+function outDims(){
+  const cap=+$('res').value;const short=Math.min(vw,vh);
+  const s=short>cap?cap/short:1;
+  const ev=n=>Math.max(2,Math.round(n*s/2)*2);
+  return [ev(vw),ev(vh)];
+}
+function bitrates(){
+  const target=+$('target').value*1048576*0.9*8;   // 10% margin for container overhead
+  const audio=96000;
+  let video=Math.floor(target/dur-audio);
+  video=Math.min(Math.max(video,150000),8000000);
+  return {video,audio};
+}
+function updEst(){
+  if(!dur){$('est').textContent='Video bitrate: –';return}
+  const b=bitrates(),[w,h]=outDims();
+  $('est').textContent=`Output ${w}×${h} · video ${(b.video/1000).toFixed(0)} kbps · audio 96 kbps`;
+  const low=b.video<400000;
+  if(low&&+$('res').value>480) $('est').textContent+=' · video panjang, cuba 480p';
+}
+$('target').onchange=updEst;$('res').onchange=updEst;
+
+$('file').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  file=f;if(srcURL)URL.revokeObjectURL(srcURL);srcURL=URL.createObjectURL(f);
+  $('pickTxt').textContent=f.name.length>34?f.name.slice(0,31)+'…':f.name;
+  $('mSize').textContent=fmtMB(f.size);
+  const probe=document.createElement('video');probe.preload='metadata';probe.muted=true;
+  probe.onloadedmetadata=()=>{
+    dur=probe.duration;vw=probe.videoWidth;vh=probe.videoHeight;
+    $('mDur').textContent=isFinite(dur)?fmtT(dur):'?';
+    $('mRes').textContent=vw+'×'+vh;
+    const n=$('srcNote');
+    if(!isFinite(dur)||!dur){n.className='note bad';n.textContent='Tak dapat baca duration video ni.';return}
+    if(f.size<=LIMIT){n.className='note ok';n.textContent='Dah bawah 32 MB, boleh terus hantar. Compress kalau nak lagi kecil.'}
+    else{n.className='note';n.textContent=`Perlu kurang ${fmtMB(f.size-LIMIT)} lagi.`}
+    $('go').disabled=false;updEst();
+  };
+  probe.onerror=()=>{$('srcNote').className='note bad';$('srcNote').textContent='Format video ni browser tak boleh baca.'};
+  probe.src=srcURL;
+  $('outCard').hidden=true;
+};
+
+async function run(){
+  const mime=pickMime();
+  if(!mime){$('srcNote').className='note bad';$('srcNote').textContent='Browser ni tak support recording. Guna Chrome terbaru.';return}
+  cancelled=false;outBlob=null;
+  $('go').disabled=true;$('runCard').hidden=false;$('outCard').hidden=true;
+  $('barFill').style.width='0';$('prog').textContent='0%';
+  try{wake=await navigator.wakeLock?.request('screen')}catch(_){wake=null}
+
+  const [w,h]=outDims(),b=bitrates();
+  const v=$('vid');v.src=srcURL;v.currentTime=0;
+  const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+  const ctx=cv.getContext('2d');
+
+  // audio: route through WebAudio so it records without playing out loud
+  let audioTracks=[];
+  try{
+    if(!actx){actx=new (window.AudioContext||window.webkitAudioContext)();actx._src=actx.createMediaElementSource(v);actx._dst=actx.createMediaStreamDestination();actx._src.connect(actx._dst)}
+    await actx.resume();
+    audioTracks=actx._dst.stream.getAudioTracks();
+  }catch(_){audioTracks=[]}
+
+  const stream=new MediaStream([...cv.captureStream(30).getVideoTracks(),...audioTracks]);
+  const chunks=[];
+  rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:b.video,audioBitsPerSecond:b.audio});
+  rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  const done=new Promise(r=>rec.onstop=r);
+
+  let raf=0;const t0=performance.now();
+  const draw=()=>{
+    ctx.drawImage(v,0,0,w,h);
+    const p=Math.min(v.currentTime/dur,1);
+    $('barFill').style.width=(p*100).toFixed(1)+'%';
+    const el=(performance.now()-t0)/1000;
+    const sz=chunks.reduce((a,c)=>a+c.size,0);
+    $('prog').textContent=`${(p*100).toFixed(0)}% · ${fmtT(v.currentTime)}/${fmtT(dur)} · ${fmtMB(sz)}`+(p>0.02?` · ETA ${fmtT(el/p-el)}`:'');
+    if(!v.paused&&!v.ended)schedule();
+  };
+  const schedule=()=>{if(v.requestVideoFrameCallback)v.requestVideoFrameCallback(draw);else raf=requestAnimationFrame(draw)};
+
+  await new Promise(r=>{if(v.readyState>=2)r();else v.onloadeddata=r});
+  ctx.drawImage(v,0,0,w,h);
+  rec.start(1000);
+  v.onended=()=>{if(rec.state!=='inactive')rec.stop()};
+  v.onpause=()=>{if(!v.ended&&!cancelled){v.play().catch(()=>{})}};
+  await v.play();schedule();
+  await done;
+  cancelAnimationFrame(raf);v.onpause=null;v.pause();
+  try{await wake?.release()}catch(_){}
+  $('runCard').hidden=true;$('go').disabled=false;
+  if(cancelled)return;
+
+  outExt=mime.startsWith('video/mp4')?'mp4':'webm';
+  outBlob=new Blob(chunks,{type:mime.split(';')[0]});
+  showOut();
+}
+
+function showOut(){
+  $('outCard').hidden=false;
+  $('oSize').textContent=fmtMB(outBlob.size);
+  $('oSaved').textContent=Math.max(0,Math.round((1-outBlob.size/file.size)*100))+'%';
+  $('oFmt').textContent=outExt.toUpperCase();
+  const n=$('outNote');
+  if(outBlob.size>LIMIT){n.className='note bad';n.textContent='Masih lebih 32 MB. Turunkan target size atau quality, then Redo.'}
+  else if(outExt!=='mp4'){n.className='note warn';n.textContent='Browser ni hanya bagi WEBM. WhatsApp mungkin tak terima; cuba buka dalam Chrome terbaru.'}
+  else{n.className='note ok';n.textContent=canShareFiles?'Siap. Tekan Share ke WhatsApp, atau Save.':'Siap. Save, then share ke WhatsApp.'}
+}
+
+$('go').onclick=()=>run().catch(err=>{
+  $('runCard').hidden=true;$('go').disabled=false;
+  $('srcNote').className='note bad';$('srcNote').textContent='Gagal: '+(err&&err.message||err);
+});
+$('stop').onclick=()=>{cancelled=true;try{$('vid').pause()}catch(_){};if(rec&&rec.state!=='inactive')rec.stop()};
+$('again').onclick=()=>{$('outCard').hidden=true;window.scrollTo({top:0,behavior:'smooth'})};
+
+const outName=()=>`${(file.name.replace(/\.[^.]+$/,'')||'video').slice(0,60)}_wa.${outExt}`;
+// Share sheet (WhatsApp etc) where the browser allows sharing files; otherwise only Save shows.
+const canShareFiles=!!(navigator.canShare&&navigator.canShare({files:[new File(['x'],'x.txt',{type:'text/plain'})]}));
+$('share').hidden=!canShareFiles;
+$('share').onclick=async()=>{
+  if(!outBlob)return;
+  const n=$('outNote');
+  try{await navigator.share({files:[new File([outBlob],outName(),{type:outBlob.type})]})}
+  catch(e){if(e.name!=='AbortError'){n.className='note warn';n.textContent='Share disekat di sini. Tekan Save, then hantar dari Galeri.'}}
+};
+
+let downloads=null;
+(async()=>{try{downloads=await window.claude?.use?.('downloads')}catch(_){downloads=null}})();
+$('save').onclick=async()=>{
+  if(!outBlob)return;
+  const name=outName();
+  const n=$('outNote');
+  if(!downloads){
+    // normal website: plain browser download
+    const a=document.createElement('a');a.href=URL.createObjectURL(outBlob);a.download=name;
+    document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),10000);
+    n.className='note ok';n.textContent='Saved: '+name;return;
+  }
+  try{await downloads.save({filename:name,data:outBlob});n.className='note ok';n.textContent='Saved: '+name}
+  catch(e){
+    const c=e&&e.code;
+    if(c==='declined'){n.className='note';n.textContent='Save dibatalkan.'}
+    else if(c==='too_large'){n.className='note bad';n.textContent='File terlalu besar untuk save. Turunkan target size.'}
+    else if(c==='rate_limited'){n.className='note warn';n.textContent='Tunggu sekejap, then tekan Save lagi.'}
+    else{n.className='note bad';n.textContent='Save gagal ('+(c||'error')+').'}
+  }
+};
+</script>
+
+</body></html>

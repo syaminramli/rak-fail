@@ -91,13 +91,13 @@ main{padding-block:0 120px}
 .vb{border:0;background:var(--v-btn);color:var(--v-fg);border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;white-space:nowrap}
 .vb.pri{background:var(--accent);color:var(--accent-fg)}
 .vf .vb{flex:1 1 120px}
-.stage{flex:1;min-height:0;position:relative;display:grid;place-items:center;overflow:hidden;touch-action:pan-y}
+.stage{flex:1;min-height:0;position:relative;display:grid;place-items:center;overflow:hidden}
 .stage img,.stage video{max-width:100%;max-height:100%;display:block}
 .stage audio{width:min(520px,90%)}
 .nav{position:absolute;top:50%;transform:translateY(-50%);border:0;width:44px;height:64px;background:rgba(255,255,255,.08);color:var(--v-fg);font-size:22px;cursor:pointer;border-radius:10px}
 .nav.l{left:max(8px,env(safe-area-inset-left,0px))} .nav.r{right:max(8px,env(safe-area-inset-right,0px))}
-.pdfv{position:absolute;inset:0;overflow:auto;padding:12px;display:flex;flex-direction:column;align-items:center;gap:10px;background:#3a3d44}
-.pdfv .pg{width:min(900px,100%);background:#fff;flex:none}
+.pdfv{position:absolute;inset:0;overflow:auto;padding:12px;display:flex;flex-direction:column;align-items:flex-start;gap:10px;background:#3a3d44;touch-action:auto}
+.pdfv .pg{width:calc(min(900px,100%) * var(--z,1));margin-inline:auto;background:#fff;flex:none}
 .pdfv canvas{width:100%;display:block}
 .other{text-align:center;color:var(--v-muted);display:flex;flex-direction:column;gap:6px;align-items:center;padding:20px}
 .other .ft{width:72px;height:72px;font-size:14px;border-radius:16px}
@@ -123,7 +123,19 @@ main{padding-block:0 120px}
 .big{font:500 26px var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 input[type=file]{display:none}
-.busy{position:fixed;z-index:8;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));max-width:calc(100% - 32px);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:13.5px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.2);font-variant-numeric:tabular-nums;text-align:center}@media (max-width:480px){.brand{display:none}}
+.busy{position:fixed;z-index:8;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));width:min(420px,calc(100% - 32px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:14px;font-size:13.5px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.2);font-variant-numeric:tabular-nums;text-align:center}
+.busy .pbar{height:5px;background:rgba(127,127,127,.4);border-radius:5px;overflow:hidden;margin-top:8px}
+.busy .pbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+.busy .pbar.ind i{width:30%;animation:ind 1.2s ease-in-out infinite}
+@keyframes ind{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
+@media (prefers-reduced-motion:reduce){.busy .pbar.ind i{animation:none;width:100%;opacity:.5}}
+.item .open{display:flex;gap:12px;align-items:center;flex:1;min-width:0;border:0;background:none;padding:0;cursor:pointer;text-align:left}
+.shr{flex:none;width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:none;cursor:pointer;display:grid;place-items:center;color:var(--muted)}
+.shr:hover{color:var(--accent);border-color:var(--accent)}
+.zoomwrap{position:absolute;inset:0;overflow:auto;display:flex}
+.zoomwrap img{margin:auto}
+.zoomwrap.z img{max-width:none;max-height:none}
+.stage.swipe{touch-action:pan-y}@media (max-width:480px){.brand{display:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -161,7 +173,7 @@ input[type=file]{display:none}
 <input type="file" id="pickDir" webkitdirectory multiple>
 <input type="file" id="pickFiles" multiple>
 
-<div class="busy" id="busy" role="status" hidden></div>
+<div class="busy" id="busy" role="status" hidden><span id="busyTx"></span><div class="pbar" hidden><i></i></div></div>
 <div class="selbar" id="selbar" hidden><div class="wrap">
   <b id="selCount">0 dipilih</b>
   <button class="btn ghost" id="selAll">Pilih semua</button>
@@ -219,38 +231,47 @@ function ingest(list){
 }
 
 // Status pill: big drives take a while to list, so always show something is happening.
+// frac: number 0–1 = progress bar, null = moving bar (total unknown), undefined = no bar
 let busyT;
-function busyNote(msg, autoHide){
+function busyNote(msg, autoHide, frac){
   clearTimeout(busyT);
-  $('#busy').hidden = !msg; $('#busy').textContent = msg;
+  $('#busy').hidden = !msg; $('#busyTx').textContent = msg;
+  const bar = $('#busy .pbar');
+  bar.hidden = frac === undefined; bar.classList.toggle('ind', frac === null);
+  bar.firstElementChild.style.width = frac == null ? '' : (frac*100).toFixed(1)+'%';
   if (autoHide) busyT = setTimeout(() => $('#busy').hidden = true, 4000);
 }
+const fmtN = n => n.toLocaleString('ms-MY');
 
 // Folder scan that shows files as they are found (Chrome with folder access).
 // Old way (webkitdirectory) makes the browser list the whole drive before the page gets anything.
 const SKIP_DIR = /^(\.|\$RECYCLE\.BIN$|System Volume Information$|LOST\.DIR$)/i;
+// Two passes: count every file first (fast, names only) so the read pass can show a real percentage.
 async function scanDir(root){
-  const stack = [[root, root.name]];
-  let n = 0, last = 0;
-  busyNote('Membaca hard disk… 0 fail');
+  const handles = [], stack = [[root, root.name]];
+  let last = 0;
+  busyNote('Mengira fail… 0', false, null);
   while (stack.length){
-    const [dir, path] = stack.pop(), files = [];
+    const [dir, path] = stack.pop();
     try {
       for await (const [name, h] of dir.entries()){
         if (h.kind === 'directory'){ if (!SKIP_DIR.test(name)) stack.push([h, path+'/'+name]); }
-        else files.push([h, path+'/'+name]);
+        else handles.push([h, path+'/'+name]);
+        if (performance.now()-last > 300){ last = performance.now(); busyNote(`Mengira fail… ${fmtN(handles.length)}`, false, null); }
       }
-    } catch { continue; } // folder we may not read; keep going
-    for (let i = 0; i < files.length; i += 32){
-      const got = await Promise.all(files.slice(i, i+32).map(([h, p]) => h.getFile().then(f => [f, p], () => null)));
-      for (const g of got) if (g){ addFile(g[0], g[1]); n++; }
-      if (performance.now()-last > 1000){ last = performance.now(); scanTick(n); }
-    }
+    } catch {} // folder we may not read; keep going
   }
-  scanTick(n, true);
+  const total = handles.length;
+  last = 0;
+  for (let i = 0; i < total; i += 32){
+    const got = await Promise.all(handles.slice(i, i+32).map(([h, p]) => h.getFile().then(f => [f, p], () => null)));
+    for (const g of got) if (g) addFile(g[0], g[1]);
+    if (performance.now()-last > 500){ last = performance.now(); scanTick(Math.min(total, i+32), total); }
+  }
+  scanTick(total, total, true);
 }
-function scanTick(n, done){
-  busyNote(done ? `Siap: ${n.toLocaleString('ms-MY')} fail dibaca` : `Membaca hard disk… ${n.toLocaleString('ms-MY')} fail`, done);
+function scanTick(n, total, done){
+  busyNote(done ? `Siap: ${fmtN(total)} fail dibaca` : `Membaca fail… ${fmtN(n)} / ${fmtN(total)} (${Math.floor(n/total*100)}%)`, done, done ? undefined : n/total);
   if (!items.length){ if (done) $('#startNote').textContent = 'Tiada fail dijumpai dalam folder tu.'; return; }
   if ($('#top').hidden) return showApp();
   // don't yank the list from under someone who is scrolling or viewing
@@ -262,7 +283,7 @@ async function openFolder(){
     try { return await scanDir(await showDirectoryPicker({mode:'read'})); }
     catch (e){ if (e.name === 'AbortError') return; }
   }
-  busyNote('Browser sedang senaraikan semua fail… hard disk besar boleh ambil beberapa minit. Jangan tutup page ni.');
+  busyNote('Browser sedang senaraikan semua fail… hard disk besar boleh ambil beberapa minit. Jangan tutup page ni.', false, null);
   $('#pickDir').click();
 }
 $('#openDir').onclick = $('#addBtn').onclick = openFolder;
@@ -342,7 +363,7 @@ function render(){
         frag.push(`<button class="tile${sel.has(it)?' sel':''}" data-i="${i}" data-ext="${esc(it.ext)}" aria-label="${esc(it.name)}">${it.kind==='vid' ? `<span class="play"><svg width="9" height="10" viewBox="0 0 9 10"><path d="M0 0l9 5-9 5z" fill="#fff"/></svg></span><span class="b">${it.dur ? fmtDur(it.dur) : fmtSize(it.size)}</span>` : ''}</button>`);
       } else {
         const where = tab === 'dir' && !q ? fmtDate(it.t) : `${fmtDate(it.t)} · ${it.dir || '/'}`;
-        frag.push(`<button class="item${sel.has(it)?' sel':''}" data-i="${i}"><span class="ft ${it.kind}">${esc(it.ext.slice(0,4)||'?')}</span><span class="tx"><span class="nm">${esc(it.name)}</span><span class="mt">${esc(where)}</span></span><span class="sz">${fmtSize(it.size)}</span></button>`);
+        frag.push(`<div class="item${sel.has(it)?' sel':''}"><button class="open" data-i="${i}"><span class="ft ${it.kind}">${esc(it.ext.slice(0,4)||'?')}</span><span class="tx"><span class="nm">${esc(it.name)}</span><span class="mt">${esc(where)}</span></span><span class="sz">${fmtSize(it.size)}</span></button><button class="shr" data-s="${i}" aria-label="Share ${esc(it.name)}" title="${shareLabel}">${SHARE_ICON}</button></div>`);
       }
     }
     box.insertAdjacentHTML('beforeend', frag.join(''));
@@ -360,9 +381,11 @@ $('#tabs').onclick = e => { const b = e.target.closest('[data-t]'); if (!b) retu
 let qT; $('#q').oninput = e => { clearTimeout(qT); qT = setTimeout(() => { q = e.target.value.trim(); render(); }, 200); };
 $('#list').onclick = e => {
   const d = e.target.closest('[data-d]'); if (d){ dirPath = d.dataset.d; window.scrollTo(0,0); render(); return; }
+  const s = e.target.closest('[data-s]');
+  if (s){ shareFiles([shown[+s.dataset.s].f]).catch(er => toastSheet('Tak berjaya', er.message)); return; }
   const b = e.target.closest('[data-i]'); if (!b) return;
   const it = shown[+b.dataset.i];
-  if (selMode){ sel.has(it) ? sel.delete(it) : sel.add(it); b.classList.toggle('sel'); updateSelBar(); }
+  if (selMode){ sel.has(it) ? sel.delete(it) : sel.add(it); b.closest('.item,.tile').classList.toggle('sel'); updateSelBar(); }
   else openView(+b.dataset.i);
 };
 
@@ -426,6 +449,7 @@ async function shareFiles(files){
 }
 const asFile = (blob, name) => blob instanceof File && blob.name === name ? blob : new File([blob], name, {type:blob.type});
 const shareLabel = canShareFiles ? 'Share' : 'Simpan';
+const SHARE_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>';
 
 /* ---------- selection ---------- */
 $('#selBtn').onclick = () => { selMode = !selMode; if (!selMode) sel.clear(); $('#selBtn').setAttribute('aria-pressed', selMode); render(); };
@@ -456,11 +480,12 @@ function showItem(){
   vUrl = URL.createObjectURL(it.f);
   $('#vName').textContent = it.name;
   $('#vMeta').textContent = `${vIdx+1}/${vList.length} · ${fmtSize(it.size)} · ${fmtDate(it.t)} · ${it.dir || '/'}`;
-  S.innerHTML = '';
+  S.innerHTML = ''; zoom = 1; S.classList.toggle('swipe', it.kind !== 'pdf');
   if (it.kind === 'img'){
-    const im = new Image(); im.alt = it.name; im.src = vUrl;
+    const w = document.createElement('div'), im = new Image(); w.className = 'zoomwrap'; im.alt = it.name; im.src = vUrl;
     im.onerror = () => { S.innerHTML = otherBox(it, 'Browser ni tak boleh paparkan gambar format '+it.ext.toUpperCase()+'. Share ke app lain untuk buka.'); };
-    S.append(im);
+    w.ondblclick = () => setZoom(zoom > 1 ? 1 : 2);
+    w.append(im); S.append(w);
   } else if (it.kind === 'vid'){
     const v = document.createElement('video'); v.controls = true; v.playsInline = true; v.src = vUrl;
     v.onloadedmetadata = () => { it.dur = v.duration; };
@@ -475,6 +500,7 @@ function showItem(){
     S.querySelector('.nav.l').onclick = () => step(-1); S.querySelector('.nav.r').onclick = () => step(1);
   }
   const acts = [`<button class="vb${it.kind==='vid'?'':' pri'}" data-a="share">${shareLabel}${it.kind==='vid' && it.size > WA_LIMIT ? ' asal' : ''}</button>`];
+  if (it.kind === 'img' || it.kind === 'pdf') acts.unshift(`<button class="vb" data-a="zoom" id="zoomBtn">Zoom 1×</button>`);
   if (it.kind === 'vid') acts.push(`<button class="vb pri" data-a="wa">Kecilkan untuk WhatsApp</button>`);
   if (it.kind === 'pdf') acts.push(`<button class="vb pri" data-a="pdf">Tool PDF</button>`);
   $('#vActs').innerHTML = acts.join('');
@@ -484,12 +510,33 @@ function otherBox(it, msg){ return `<div class="other"><span class="ft ${it.kind
 $('#vActs').onclick = async e => {
   const a = e.target.closest('[data-a]')?.dataset.a, it = vList[vIdx]; if (!a) return;
   if (a === 'share'){ try { await shareFiles([it.f]); } catch (er){ toastSheet('Tak berjaya', er.message); } }
+  if (a === 'zoom') setZoom(zoom >= 3 ? 1 : zoom+1);
   if (a === 'wa') waSheet(it);
   if (a === 'pdf') pdfSheet(it);
 };
+// Zoom: bigger image / pages inside a scroll box, so you can scroll around them
+let zoom = 1;
+function setZoom(z){
+  zoom = z; const S = $('#stage');
+  if ($('#zoomBtn')) $('#zoomBtn').textContent = `Zoom ${z}×`;
+  S.classList.toggle('swipe', z === 1 && !S.querySelector('.pdfv'));
+  const w = S.querySelector('.zoomwrap');
+  if (w){
+    const im = w.querySelector('img'), fit = Math.min(w.clientWidth/im.naturalWidth, w.clientHeight/im.naturalHeight, 1);
+    w.classList.toggle('z', z > 1);
+    im.style.width = z > 1 ? Math.round(im.naturalWidth*fit*z)+'px' : '';
+  }
+  const box = S.querySelector('.pdfv');
+  if (box){
+    const r = box.scrollTop / (box.scrollHeight || 1);
+    box.style.setProperty('--z', z);
+    box.scrollTop = r * box.scrollHeight;
+    box.querySelectorAll('.pg').forEach(pg => box._io.observe(pg)); // re-render sharp at the new size
+  }
+}
 // swipe + keys
 let sx = null;
-$('#stage').addEventListener('pointerdown', e => { sx = e.target.closest('video,audio,.pdfv') ? null : e.clientX; });
+$('#stage').addEventListener('pointerdown', e => { sx = zoom > 1 || e.target.closest('video,audio,.pdfv') ? null : e.clientX; });
 $('#stage').addEventListener('pointerup', e => { if (sx !== null && Math.abs(e.clientX-sx) > 60) step(e.clientX < sx ? 1 : -1); sx = null; });
 document.addEventListener('keydown', e => {
   if (!$('#scrim').hidden){ if (e.key === 'Escape') closeSheet(); return; }
@@ -527,12 +574,13 @@ async function showPdf(it, S){
     const io = new IntersectionObserver(es => es.forEach(async e => {
       if (!e.isIntersecting) return; io.unobserve(e.target);
       const page = await doc.getPage(+e.target.dataset.p);
-      const w = e.target.clientWidth * Math.min(2, devicePixelRatio || 1);
+      const w = Math.min(4000, e.target.clientWidth * Math.min(2, devicePixelRatio || 1));
       const vp = page.getViewport({scale: w / page.getViewport({scale:1}).width});
       const c = canvasOf(Math.ceil(vp.width), Math.ceil(vp.height));
       await page.render({canvasContext:c.getContext('2d'), viewport:vp}).promise;
-      e.target.style.aspectRatio = ''; e.target.append(c);
+      e.target.style.aspectRatio = ''; e.target.replaceChildren(c);
     }), {root:box, rootMargin:'600px'});
+    box._io = io;
     for (let p = 1; p <= doc.numPages; p++){
       const d = document.createElement('div'); d.className = 'pg'; d.dataset.p = p; d.style.aspectRatio = `${first.width}/${first.height}`;
       box.append(d); io.observe(d);
@@ -658,7 +706,7 @@ async function compressVideo(it, targetMB, maxShort, onP, setStop){
 }
 
 /* ---------- PDF tools (same methods as PDF Toolkit) ---------- */
-const PDF_TOOLKIT = 'https://claude.ai/artifact/BkPyZNdRd5hqbtND4kTuDm';
+const PDF_TOOLKIT = 'https://syaminramli.github.io/rak-fail/pdf.html';
 function pdfSheet(it){
   sheet(`<h3>Tool PDF</h3><p class="note">${esc(it.name)} · ${fmtSize(it.size)}${it.pages ? ' · '+it.pages+' halaman' : ''}</p>
     <div class="acts">
