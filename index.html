@@ -135,7 +135,14 @@ input[type=file]{display:none}
 .zoomwrap{position:absolute;inset:0;overflow:auto;display:flex}
 .zoomwrap img{margin:auto}
 .zoomwrap.z img{max-width:none;max-height:none}
-.stage.swipe{touch-action:pan-y}@media (max-width:480px){.brand{display:none}}
+.stage.swipe{touch-action:pan-y}
+.vwrap{position:absolute;inset:0;display:flex;flex-direction:column}
+.vwrap video{flex:1;min-height:0;width:100%;max-height:none;object-fit:contain;cursor:pointer}
+.vbar{display:flex;align-items:center;gap:6px;padding:8px max(12px,env(safe-area-inset-left,0px)) 4px}
+.vc{flex:none;min-width:40px;height:38px;border:0;border-radius:10px;background:var(--v-btn);color:var(--v-fg);font:600 13px var(--mono);cursor:pointer}
+.vbar .tm{flex:none;font:500 12px var(--mono);color:var(--v-muted);font-variant-numeric:tabular-nums;min-width:36px;text-align:center}
+.vbar input[type=range]{flex:1;min-width:60px;height:32px;accent-color:var(--accent);cursor:pointer;touch-action:none}
+@media (max-width:420px){.vc[data-v="back"],.vc[data-v="fwd"]{display:none}}@media (max-width:480px){.brand{display:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -487,10 +494,28 @@ function showItem(){
     w.ondblclick = () => setZoom(zoom > 1 ? 1 : 2);
     w.append(im); S.append(w);
   } else if (it.kind === 'vid'){
-    const v = document.createElement('video'); v.controls = true; v.playsInline = true; v.src = vUrl;
-    v.onloadedmetadata = () => { it.dur = v.duration; };
+    S.innerHTML = `<div class="vwrap"><video playsinline></video>
+      <div class="vbar"><button class="vc" data-v="play" aria-label="Main">▶</button><button class="vc" data-v="back" aria-label="Undur 10 saat">−10</button>
+      <span class="tm" id="tCur">0:00</span><input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="Kedudukan video"><span class="tm" id="tDur">0:00</span>
+      <button class="vc" data-v="fwd" aria-label="Maju 10 saat">+10</button><button class="vc" data-v="fs" aria-label="Skrin penuh">⛶</button></div></div>`;
+    const v = S.querySelector('video'), seek = $('#seek');
+    let dragging = false;
+    const sync = () => { if (!dragging && v.duration) seek.value = v.currentTime / v.duration * 1000; $('#tCur').textContent = fmtDur(v.currentTime); };
+    v.onloadedmetadata = () => { it.dur = v.duration; $('#tDur').textContent = fmtDur(v.duration); };
+    v.ontimeupdate = sync;
+    v.onplay = v.onpause = () => { const p = S.querySelector('[data-v="play"]'); p.textContent = v.paused ? '▶' : '❚❚'; p.setAttribute('aria-label', v.paused ? 'Main' : 'Jeda'); };
+    seek.oninput = () => { dragging = true; if (v.duration){ v.currentTime = seek.value / 1000 * v.duration; $('#tCur').textContent = fmtDur(v.currentTime); } };
+    seek.onchange = () => { dragging = false; };
+    v.onclick = () => v.paused ? v.play() : v.pause();
+    S.querySelector('.vbar').onclick = e => {
+      const k = e.target.closest('[data-v]')?.dataset.v;
+      if (k === 'play') v.paused ? v.play() : v.pause();
+      if (k === 'back') v.currentTime = Math.max(0, v.currentTime - 10);
+      if (k === 'fwd') v.currentTime = Math.min(v.duration || 0, v.currentTime + 10);
+      if (k === 'fs') (v.requestFullscreen ? v.requestFullscreen() : v.webkitEnterFullscreen?.())?.catch?.(() => {});
+    };
     v.onerror = () => { S.innerHTML = otherBox(it, 'Format video ni tak boleh dimainkan dalam browser. Masih boleh cuba kecilkan atau share.'); };
-    S.append(v);
+    v.src = vUrl;
   } else if (it.kind === 'aud'){
     const a = document.createElement('audio'); a.controls = true; a.src = vUrl; S.innerHTML = otherBox(it, ''); S.firstChild.append(a);
   } else if (it.kind === 'pdf') showPdf(it, S);
@@ -536,7 +561,7 @@ function setZoom(z){
 }
 // swipe + keys
 let sx = null;
-$('#stage').addEventListener('pointerdown', e => { sx = zoom > 1 || e.target.closest('video,audio,.pdfv') ? null : e.clientX; });
+$('#stage').addEventListener('pointerdown', e => { sx = zoom > 1 || e.target.closest('video,audio,.pdfv,.vbar') ? null : e.clientX; });
 $('#stage').addEventListener('pointerup', e => { if (sx !== null && Math.abs(e.clientX-sx) > 60) step(e.clientX < sx ? 1 : -1); sx = null; });
 document.addEventListener('keydown', e => {
   if (!$('#scrim').hidden){ if (e.key === 'Escape') closeSheet(); return; }
