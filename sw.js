@@ -1,7 +1,9 @@
 // Service worker for the three apps: works offline and receives files from Android's Share menu.
-const CACHE = 'rak-v1';
-const PAGES = ['./', 'index.html', 'pdf.html', 'video.html', 'rak.webmanifest', 'pdf.webmanifest', 'video.webmanifest',
+const CACHE = 'rak-v2';
+const PAGES = ['./', 'index.html', 'rak.html', 'pdf.html', 'video.html', 'rak.webmanifest', 'pdf.webmanifest', 'video.webmanifest',
   'icons/rak-192.png', 'icons/pdf-192.png', 'icons/video-192.png'];
+// Old installs shared to "./?share=1" before Rak Fail moved to rak.html
+const SHARE_TO = p => p.endsWith('/') ? p + 'rak.html' : p;
 const CDN = /^https:\/\/(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)\//;
 
 self.addEventListener('install', e => {
@@ -27,7 +29,7 @@ self.addEventListener('fetch', e => {
     e.respondWith((async () => {
       const files = (await req.formData()).getAll('files').filter(f => typeof f !== 'string');
       await kvPut('shared', {t: Date.now(), files});
-      return Response.redirect(url.pathname + '?shared=1', 303);
+      return Response.redirect(SHARE_TO(url.pathname) + '?shared=1', 303);
     })());
     return;
   }

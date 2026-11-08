@@ -1,0 +1,925 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Rak Fail</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: sticky top bar (search + tabs) over a photo grid or file list; full-screen dark viewer; bottom sheet for actions */
+:root{
+  --bg:#f3f4f6; --surface:#ffffff; --fg:#181b21; --muted:#5f6673; --line:#e0e3e9;
+  --accent:#2f55d4; --accent-fg:#ffffff; --soft:#e7ecfb; --ok:#13804f; --bad:#c2352b;
+  --img:#d9822b; --vid:#2f55d4; --pdf:#c2352b; --aud:#7a4fd0; --oth:#8a919c;
+  --v-bg:#0b0c0f; --v-fg:#f1f2f4; --v-muted:#a3a9b4; --v-btn:#22252c;
+  --sans:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#101216; --surface:#181b21; --fg:#e8eaee; --muted:#9aa1ad; --line:#2a2e36;
+  --accent:#6f8cff; --accent-fg:#0b1233; --soft:#1e2643; --ok:#4cc38a; --bad:#f07a70; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#101216; --surface:#181b21; --fg:#e8eaee; --muted:#9aa1ad; --line:#2a2e36;
+  --accent:#6f8cff; --accent-fg:#0b1233; --soft:#1e2643; --ok:#4cc38a; --bad:#f07a70; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 var(--sans)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+button{font:inherit;color:inherit}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1200px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.top .wrap{padding-block:10px 0;display:flex;flex-direction:column;gap:10px}
+.row1{display:flex;gap:8px;align-items:center}
+.brand{font-weight:700;font-size:18px;letter-spacing:-.01em;white-space:nowrap}
+.search{flex:1;min-width:0;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);font:inherit}
+.icb{flex:none;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 11px;cursor:pointer;font-weight:600;font-size:14px;white-space:nowrap}
+.icb[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.tabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin:0 -4px}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;border:0;background:none;padding:8px 10px 10px;cursor:pointer;color:var(--muted);font-weight:600;border-bottom:2px solid transparent;display:flex;gap:6px;align-items:baseline}
+.tab small{font:500 11px var(--mono);color:var(--muted)}
+.tab[aria-selected="true"]{color:var(--fg);border-color:var(--fg)}
+.tab i{width:8px;height:8px;border-radius:50%;align-self:center}
+.meter{display:flex;height:4px;border-radius:4px;overflow:hidden;background:var(--line);margin-top:2px}
+.meter span{display:block;height:100%}
+.bar2{display:flex;justify-content:space-between;gap:12px;align-items:center;padding-block:14px 8px;color:var(--muted);font-size:13px;flex-wrap:wrap}
+.bar2 select{font:inherit;font-size:13px;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg)}
+.crumbs{display:flex;flex-wrap:wrap;gap:2px;align-items:center;min-width:0}
+.crumbs button{border:0;background:none;color:var(--accent);cursor:pointer;padding:2px 4px;font-weight:600;overflow-wrap:anywhere;text-align:left}
+main{padding-block:0 120px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:4px}
+.mh{grid-column:1/-1;font-weight:700;font-size:14px;padding:14px 2px 4px}
+.tile{position:relative;aspect-ratio:1;max-width:100%;border:0;padding:0;border-radius:6px;cursor:pointer;background:var(--line) center/cover no-repeat;overflow:hidden}
+.tile::after{content:attr(data-ext);position:absolute;inset:0;display:grid;place-items:center;font:500 12px var(--mono);color:var(--muted);text-transform:uppercase}
+.tile.has::after{content:none}
+.tile .b{position:absolute;right:4px;bottom:4px;z-index:1;background:rgba(0,0,0,.6);color:#fff;font:500 11px var(--mono);padding:1px 5px;border-radius:4px}
+.tile .play{position:absolute;left:6px;top:6px;z-index:1;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.55);display:grid;place-items:center}
+.list{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.item{display:flex;gap:12px;align-items:center;width:100%;padding:11px 14px;border:0;border-bottom:1px solid var(--line);background:none;cursor:pointer;text-align:left}
+.item:last-child{border-bottom:0}
+.item:hover{background:var(--bg)}
+.ft{flex:none;width:40px;height:40px;border-radius:9px;display:grid;place-items:center;font:600 10px var(--mono);color:#fff;text-transform:uppercase;background:var(--oth)}
+.ft.img{background:var(--img)} .ft.vid{background:var(--vid)} .ft.pdf{background:var(--pdf)} .ft.aud{background:var(--aud)} .ft.dir{background:var(--soft);color:var(--accent)}
+.item .tx{flex:1;min-width:0}
+.item .nm{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .mt{display:block;font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .sz{font:500 12px var(--mono);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.sel{box-shadow:inset 0 0 0 3px var(--accent)}
+.item.sel{background:var(--soft);box-shadow:none}
+.tile.sel::before{content:"✓";position:absolute;right:6px;top:6px;z-index:2;width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--accent-fg);display:grid;place-items:center;font-size:13px;font-weight:700}
+.empty{padding:40px 0;color:var(--muted);text-align:center}
+.start{max-width:560px;margin:8vh auto 0;display:flex;flex-direction:column;gap:18px}
+.start h1{font-size:30px;line-height:1.15;margin:0;letter-spacing:-.02em;text-wrap:balance}
+.start p{margin:0;color:var(--muted)}
+.start ol{margin:0;padding-left:20px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+.btn{display:inline-flex;justify-content:center;align-items:center;gap:8px;border:0;border-radius:12px;padding:13px 18px;background:var(--accent);color:var(--accent-fg);font-weight:700;cursor:pointer;text-decoration:none;font-size:15px}
+.btn.ghost{background:none;color:var(--fg);border:1px solid var(--line);font-weight:600}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+.btns>*{flex:1 1 140px}
+.selbar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-block:10px calc(10px + env(safe-area-inset-bottom,0px))}
+.selbar .wrap{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.selbar b{margin-right:auto}
+.selbar .btn{padding:10px 14px}
+/* viewer: always dark, media looks best on black */
+.view{position:fixed;inset:0;z-index:20;background:var(--v-bg);color:var(--v-fg);display:flex;flex-direction:column}
+.vh,.vf{display:flex;gap:8px;align-items:center;padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px))}
+.vh{padding-top:calc(8px + env(safe-area-inset-top,0px));padding-bottom:8px}
+.vf{padding-top:8px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));flex-wrap:wrap}
+.vh .tx{flex:1;min-width:0}
+.vh .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vh .mt{font-size:12px;color:var(--v-muted);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vb{border:0;background:var(--v-btn);color:var(--v-fg);border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;white-space:nowrap}
+.vb.pri{background:var(--accent);color:var(--accent-fg)}
+.vf .vb{flex:1 1 120px}
+.stage{flex:1;min-height:0;position:relative;display:grid;place-items:center;overflow:hidden}
+.stage img,.stage video{max-width:100%;max-height:100%;display:block}
+.stage audio{width:min(520px,90%)}
+.nav{position:absolute;top:50%;transform:translateY(-50%);border:0;width:44px;height:64px;background:rgba(255,255,255,.08);color:var(--v-fg);font-size:22px;cursor:pointer;border-radius:10px}
+.nav.l{left:max(8px,env(safe-area-inset-left,0px))} .nav.r{right:max(8px,env(safe-area-inset-right,0px))}
+.pdfv{position:absolute;inset:0;overflow:auto;padding:12px;display:flex;flex-direction:column;align-items:flex-start;gap:10px;background:#3a3d44;touch-action:auto}
+.pdfv .pg{width:calc(min(900px,100%) * var(--z,1));margin-inline:auto;background:#fff;flex:none}
+.pdfv canvas{width:100%;display:block}
+.other{text-align:center;color:var(--v-muted);display:flex;flex-direction:column;gap:6px;align-items:center;padding:20px}
+.other .ft{width:72px;height:72px;font-size:14px;border-radius:16px}
+/* bottom sheet */
+.scrim{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--surface);color:var(--fg);width:min(560px,100%);border-radius:18px 18px 0 0;padding:20px max(18px,env(safe-area-inset-left,0px)) calc(20px + env(safe-area-inset-bottom,0px));max-height:88vh;overflow:auto;display:flex;flex-direction:column;gap:14px}
+.sheet h3{margin:0;font-size:18px}
+.note{margin:0;font-size:13.5px;color:var(--muted)}
+.note.ok{color:var(--ok)} .note.bad{color:var(--bad)}
+.k{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700;display:block;margin-bottom:6px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{border:1px solid var(--line);background:none;border-radius:999px;padding:7px 13px;cursor:pointer;font-weight:600;font-size:14px}
+.seg button[aria-pressed="true"]{border-color:var(--accent);background:var(--soft);color:var(--accent)}
+.acts{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.acts button,.acts a{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:12px 14px;border:0;border-bottom:1px solid var(--line);background:none;cursor:pointer;text-align:left;text-decoration:none;color:var(--fg)}
+.acts>:last-child{border-bottom:0}
+.acts button:hover,.acts a:hover{background:var(--bg)}
+.acts b{font-weight:600}
+.acts small{color:var(--muted);font-size:12.5px}
+a.icb{text-decoration:none;color:var(--fg);font-size:17px;line-height:1}
+.back{color:var(--accent);text-decoration:none;font-weight:600;font-size:14px}
+.tgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.tgrid button,.tgrid a{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:none;cursor:pointer;text-align:left;text-decoration:none;color:var(--fg);min-width:0}
+.tgrid button:hover,.tgrid a:hover{border-color:var(--accent);background:var(--soft)}
+.tgrid b{font-weight:600;font-size:14px}
+.tgrid small{color:var(--muted);font-size:12px;line-height:1.3}
+.inp{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);font:inherit}
+.prog{height:8px;background:var(--line);border-radius:99px;overflow:hidden}
+.prog i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s}
+.big{font:500 26px var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+input[type=file]{display:none}
+.busy{position:fixed;z-index:8;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));width:min(420px,calc(100% - 32px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:14px;font-size:13.5px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.2);font-variant-numeric:tabular-nums;text-align:center}
+.busy .pbar{height:5px;background:rgba(127,127,127,.4);border-radius:5px;overflow:hidden;margin-top:8px}
+.busy .pbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+.busy .pbar.ind i{width:30%;animation:ind 1.2s ease-in-out infinite}
+@keyframes ind{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
+@media (prefers-reduced-motion:reduce){.busy .pbar.ind i{animation:none;width:100%;opacity:.5}}
+.item .open{display:flex;gap:12px;align-items:center;flex:1;min-width:0;border:0;background:none;padding:0;cursor:pointer;text-align:left}
+.shr{flex:none;width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:none;cursor:pointer;display:grid;place-items:center;color:var(--muted)}
+.shr:hover{color:var(--accent);border-color:var(--accent)}
+.zoomwrap{position:absolute;inset:0;overflow:auto;display:flex}
+.zoomwrap img{margin:auto}
+.zoomwrap.z img{max-width:none;max-height:none}
+.stage.swipe{touch-action:pan-y}
+.vwrap{position:absolute;inset:0;display:flex;flex-direction:column}
+.vwrap video{flex:1;min-height:0;width:100%;max-height:none;object-fit:contain;cursor:pointer}
+.vbar{display:flex;align-items:center;gap:6px;padding:8px max(12px,env(safe-area-inset-left,0px)) 4px}
+.vc{flex:none;min-width:40px;height:38px;border:0;border-radius:10px;background:var(--v-btn);color:var(--v-fg);font:600 13px var(--mono);cursor:pointer}
+.vbar .tm{flex:none;font:500 12px var(--mono);color:var(--v-muted);font-variant-numeric:tabular-nums;min-width:36px;text-align:center}
+.vbar input[type=range]{flex:1;min-width:60px;height:32px;accent-color:var(--accent);cursor:pointer;touch-action:none}
+@media (max-width:420px){.vc[data-v="back"],.vc[data-v="fwd"]{display:none}}@media (max-width:480px){.brand{display:none}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<header class="top" id="top" hidden>
+  <div class="wrap">
+    <div class="row1">
+      <a class="icb homelink" href="./" hidden aria-label="Halaman utama" title="Halaman utama">⌂</a>
+      <span class="brand">Rak Fail</span>
+      <input class="search" id="q" type="search" placeholder="Cari nama fail…" aria-label="Cari nama fail">
+      <button class="icb" id="selBtn" aria-pressed="false">Pilih</button>
+      <button class="icb" id="addBtn" title="Tambah folder lain">+ Folder</button>
+      <button class="icb install" hidden>Pasang app</button>
+    </div>
+    <div class="meter" id="meter" aria-hidden="true"></div>
+    <nav class="tabs" id="tabs" role="tablist"></nav>
+  </div>
+</header>
+
+<main class="wrap" id="main">
+  <section class="start" id="start">
+    <a class="homelink back" href="./" hidden>‹ Halaman utama</a>
+    <h1>Semua fail hard disk, tersusun ikut jenis.</h1>
+    <p>Gambar, video, PDF dan audio diasingkan automatik. Semua dibuka terus dalam tablet ni; tiada apa di-upload.</p>
+    <ol>
+      <li>Cucuk hard disk / pendrive pada tablet atau phone.</li>
+      <li>Tekan <b>Buka folder</b>, pilih hard disk tu (atau satu folder dalamnya).</li>
+      <li>Tekan mana-mana fail: tengok, share ke WhatsApp, kecilkan video, atau urus PDF.</li>
+    </ol>
+    <div class="btns">
+      <button class="btn" id="openDir">Buka folder</button>
+      <button class="btn ghost" id="openFiles">Pilih fail</button>
+    </div>
+    <button class="btn ghost install" hidden>Pasang sebagai app di telefon</button>
+    <p class="note" id="startNote">Kalau "Buka folder" cuma bagi pilih fail, guna Chrome dan pilih banyak fail sekali gus.</p>
+  </section>
+  <div id="list" hidden></div>
+</main>
+
+<input type="file" id="pickDir" webkitdirectory multiple>
+<input type="file" id="pickFiles" multiple>
+
+<div class="busy" id="busy" role="status" hidden><span id="busyTx"></span><div class="pbar" hidden><i></i></div></div>
+<div class="selbar" id="selbar" hidden><div class="wrap">
+  <b id="selCount">0 dipilih</b>
+  <button class="btn ghost" id="selAll">Pilih semua</button>
+  <button class="btn ghost" id="selMerge" hidden>Gabung PDF</button>
+  <button class="btn" id="selShare">Share</button>
+</div></div>
+
+<div class="view" id="view" hidden>
+  <div class="vh">
+    <button class="vb" id="vClose" aria-label="Tutup">✕</button>
+    <div class="tx"><div class="nm" id="vName"></div><div class="mt" id="vMeta"></div></div>
+  </div>
+  <div class="stage" id="stage"></div>
+  <div class="vf" id="vActs"></div>
+</div>
+
+<div class="scrim" id="scrim" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const MB = 1048576, WA_LIMIT = 32 * MB;
+const fmtSize = b => b >= 1e9 ? (b/1e9).toFixed(2)+' GB' : b >= 1e6 ? (b/1e6).toFixed(1)+' MB' : Math.max(1, Math.round(b/1e3))+' KB';
+const fmtDur = s => { s = Math.round(s||0); const h = s/3600|0, m = s%3600/60|0, x = s%60; return (h ? h+':'+String(m).padStart(2,'0') : m)+':'+String(x).padStart(2,'0'); };
+const fmtDate = t => new Date(t).toLocaleDateString('ms-MY', {day:'numeric', month:'short', year:'numeric'});
+const monthKey = t => new Date(t).toLocaleDateString('ms-MY', {month:'long', year:'numeric'});
+const baseName = n => n.replace(/\.[^.]+$/, '');
+
+/* ---------- files ---------- */
+const KIND = {img:/^(jpe?g|png|gif|webp|bmp|avif|heic|heif)$/, vid:/^(mp4|m4v|mov|mkv|webm|3gp|avi|wmv|flv|ts|mts|m2ts)$/, pdf:/^pdf$/, aud:/^(mp3|m4a|aac|wav|ogg|opus|flac|wma|amr)$/};
+const TABS = [['img','Gambar'],['vid','Video'],['pdf','PDF'],['aud','Audio'],['oth','Lain'],['dir','Folder'],['dup','Pendua']];
+let items = [], tab = 'img', sort = 'new', q = '', dirPath = '', selMode = false, sel = new Set(), shown = [];
+
+const seenKeys = new Set();
+function addFile(f, path){
+  // skip hidden and system junk (.Trashes, ._files, recycle bin)
+  if (/(^|\/)(\.|System Volume Information\/|\$RECYCLE\.BIN\/)/i.test(path)) return;
+  const key = path+'|'+f.size; if (seenKeys.has(key)) return; seenKeys.add(key);
+  const ext = (f.name.match(/\.([^.]+)$/) || [, ''])[1].toLowerCase();
+  const kind = Object.keys(KIND).find(k => KIND[k].test(ext)) || 'oth';
+  items.push({f, path, name:f.name, ext, kind, size:f.size, t:f.lastModified, dir:path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''});
+}
+function showApp(){
+  if (!$('#top').hidden) return;
+  const counts = {}; items.forEach(i => counts[i.kind] = (counts[i.kind]||0)+1);
+  if (!counts[tab]) tab = ['img','vid','pdf','aud','oth'].find(k => counts[k]) || 'dir';
+  $('#start').hidden = true; $('#top').hidden = false; $('#list').hidden = false;
+  render();
+}
+function ingest(list){
+  for (const f of list) addFile(f, f.webkitRelativePath || f.name);
+  busyNote('');
+  if (!items.length){ $('#startNote').textContent = 'Tiada fail dijumpai dalam pilihan tu. Cuba pilih folder lain.'; return; }
+  if ($('#top').hidden) showApp(); else render();
+}
+
+// Status pill: big drives take a while to list, so always show something is happening.
+// frac: number 0–1 = progress bar, null = moving bar (total unknown), undefined = no bar
+let busyT;
+function busyNote(msg, autoHide, frac){
+  clearTimeout(busyT);
+  $('#busy').hidden = !msg; $('#busyTx').textContent = msg;
+  const bar = $('#busy .pbar');
+  bar.hidden = frac === undefined; bar.classList.toggle('ind', frac === null);
+  bar.firstElementChild.style.width = frac == null ? '' : (frac*100).toFixed(1)+'%';
+  if (autoHide) busyT = setTimeout(() => $('#busy').hidden = true, 4000);
+}
+const fmtN = n => n.toLocaleString('ms-MY');
+
+// Folder scan that shows files as they are found (Chrome with folder access).
+// Old way (webkitdirectory) makes the browser list the whole drive before the page gets anything.
+const SKIP_DIR = /^(\.|\$RECYCLE\.BIN$|System Volume Information$|LOST\.DIR$)/i;
+// Two passes: count every file first (fast, names only) so the read pass can show a real percentage.
+async function scanDir(root){
+  const handles = [], stack = [[root, root.name]];
+  let last = 0;
+  busyNote('Mengira fail… 0', false, null);
+  while (stack.length){
+    const [dir, path] = stack.pop();
+    try {
+      for await (const [name, h] of dir.entries()){
+        if (h.kind === 'directory'){ if (!SKIP_DIR.test(name)) stack.push([h, path+'/'+name]); }
+        else handles.push([h, path+'/'+name]);
+        if (performance.now()-last > 300){ last = performance.now(); busyNote(`Mengira fail… ${fmtN(handles.length)}`, false, null); }
+      }
+    } catch {} // folder we may not read; keep going
+  }
+  const total = handles.length;
+  last = 0;
+  for (let i = 0; i < total; i += 32){
+    const got = await Promise.all(handles.slice(i, i+32).map(([h, p]) => h.getFile().then(f => [f, p], () => null)));
+    for (const g of got) if (g) addFile(g[0], g[1]);
+    if (performance.now()-last > 500){ last = performance.now(); scanTick(Math.min(total, i+32), total); }
+  }
+  scanTick(total, total, true);
+}
+function scanTick(n, total, done){
+  busyNote(done ? `Siap: ${fmtN(total)} fail dibaca` : `Membaca fail… ${fmtN(n)} / ${fmtN(total)} (${Math.floor(n/total*100)}%)`, done, done ? undefined : n/total);
+  if (!items.length){ if (done) $('#startNote').textContent = 'Tiada fail dijumpai dalam folder tu.'; return; }
+  if ($('#top').hidden) return showApp();
+  // don't yank the list from under someone who is scrolling or viewing
+  if (window.scrollY < 80 && $('#view').hidden && !selMode) render(); else renderTabs();
+}
+
+async function openFolder(){
+  if (window.showDirectoryPicker && window.top === window){
+    try { return await scanDir(await showDirectoryPicker({mode:'read'})); }
+    catch (e){ if (e.name === 'AbortError') return; }
+  }
+  busyNote('Browser sedang senaraikan semua fail… hard disk besar boleh ambil beberapa minit. Jangan tutup page ni.', false, null);
+  $('#pickDir').click();
+}
+$('#openDir').onclick = $('#addBtn').onclick = openFolder;
+$('#openFiles').onclick = () => $('#pickFiles').click();
+for (const id of ['#pickDir','#pickFiles']){
+  $(id).onchange = e => { ingest(e.target.files); e.target.value = ''; };
+  $(id).addEventListener('cancel', () => busyNote(''));
+}
+
+/* ---------- list rendering ---------- */
+function filtered(){
+  let l;
+  if (tab === 'dup'){
+    const g = new Map();
+    for (const i of items){ const k = i.name.toLowerCase()+'|'+i.size; g.set(k, [...(g.get(k)||[]), i]); }
+    l = [...g.values()].filter(a => a.length > 1).flat();
+  } else if (tab === 'dir') l = items.filter(i => i.dir === dirPath);
+  else l = items.filter(i => i.kind === tab);
+  if (q){ const s = q.toLowerCase(); l = (tab === 'dir' ? items : l).filter(i => i.path.toLowerCase().includes(s)); }
+  const by = {new:(a,b) => b.t-a.t, old:(a,b) => a.t-b.t, big:(a,b) => b.size-a.size, name:(a,b) => a.name.localeCompare(b.name, undefined, {numeric:true})}[sort];
+  return tab === 'dup' ? l.sort((a,b) => b.size-a.size || a.name.localeCompare(b.name)) : l.sort(by);
+}
+
+function renderTabs(){
+  const n = {}, sz = {};
+  for (const i of items){ n[i.kind] = (n[i.kind]||0)+1; sz[i.kind] = (sz[i.kind]||0)+i.size; }
+  const total = items.reduce((a,i) => a+i.size, 0) || 1;
+  $('#meter').innerHTML = ['img','vid','pdf','aud','oth'].map(k => `<span style="width:${(sz[k]||0)/total*100}%;background:var(--${k})"></span>`).join('');
+  $('#tabs').innerHTML = TABS.map(([k,l]) => {
+    const c = k === 'dir' || k === 'dup' ? '' : `<small>${n[k]||0}</small>`;
+    const dot = KIND[k] || k === 'oth' ? `<i style="background:var(--${k})"></i>` : '';
+    return `<button class="tab" role="tab" data-t="${k}" aria-selected="${k===tab}">${dot}${l}${c}</button>`;
+  }).join('');
+}
+
+const PAGE = 240;
+let more = null;
+const moreIO = new IntersectionObserver(es => { if (es[0].isIntersecting && more) more(); }, {rootMargin:'800px'});
+
+function render(){
+  renderTabs();
+  shown = filtered();
+  const L = $('#list'); L.innerHTML = ''; moreIO.disconnect();
+  const totalSize = shown.reduce((a,i) => a+i.size, 0);
+  let head = `<div class="bar2">`;
+  if (tab === 'dir' && !q){
+    const parts = dirPath ? dirPath.split('/') : [];
+    head += `<div class="crumbs"><button data-d="">Semua</button>${parts.map((p,i) => `/<button data-d="${esc(parts.slice(0,i+1).join('/'))}">${esc(p)}</button>`).join('')}</div>`;
+  } else head += `<span>${shown.length} fail · ${fmtSize(totalSize)}${tab==='dup' && shown.length ? ' · nama & saiz sama' : ''}</span>`;
+  if (tab !== 'dup') head += `<select id="sort" aria-label="Susun"><option value="new">Terbaru</option><option value="old">Terlama</option><option value="big">Terbesar</option><option value="name">Nama A–Z</option></select>`;
+  L.insertAdjacentHTML('beforeend', head+'</div>');
+  if ($('#sort')){ $('#sort').value = sort; $('#sort').onchange = e => { sort = e.target.value; render(); }; }
+
+  const box = document.createElement('div');
+  const grid = tab === 'img' || tab === 'vid';
+  box.className = grid ? 'grid' : 'list';
+  L.append(box);
+
+  if (tab === 'dir' && !q){
+    const subs = new Map(), pre = dirPath ? dirPath+'/' : '';
+    for (const i of items) if (i.dir.startsWith(pre) && i.dir !== dirPath){
+      const name = i.dir.slice(pre.length).split('/')[0];
+      const s = subs.get(name) || {n:0, size:0}; s.n++; s.size += i.size; subs.set(name, s);
+    }
+    box.insertAdjacentHTML('beforeend', [...subs].sort((a,b) => a[0].localeCompare(b[0], undefined, {numeric:true})).map(([nm,s]) =>
+      `<button class="item" data-d="${esc(pre+nm)}"><span class="ft dir">DIR</span><span class="tx"><span class="nm">${esc(nm)}</span><span class="mt">${s.n} fail</span></span><span class="sz">${fmtSize(s.size)}</span></button>`).join(''));
+  }
+  if (!shown.length && !box.children.length) box.outerHTML = `<p class="empty">${tab==='dup' ? 'Tiada fail pendua. Bagus.' : q ? 'Tiada fail sepadan dengan carian.' : 'Tiada fail jenis ni.'}</p>`;
+
+  let done = 0, lastMonth = '';
+  more = () => {
+    const end = Math.min(done+PAGE, shown.length), frag = [];
+    for (let i = done; i < end; i++){
+      const it = shown[i];
+      if (grid){
+        if (sort === 'new' || sort === 'old'){ const m = monthKey(it.t); if (m !== lastMonth){ frag.push(`<div class="mh">${m}</div>`); lastMonth = m; } }
+        frag.push(`<button class="tile${sel.has(it)?' sel':''}" data-i="${i}" data-ext="${esc(it.ext)}" aria-label="${esc(it.name)}">${it.kind==='vid' ? `<span class="play"><svg width="9" height="10" viewBox="0 0 9 10"><path d="M0 0l9 5-9 5z" fill="#fff"/></svg></span><span class="b">${it.dur ? fmtDur(it.dur) : fmtSize(it.size)}</span>` : ''}</button>`);
+      } else {
+        const where = tab === 'dir' && !q ? fmtDate(it.t) : `${fmtDate(it.t)} · ${it.dir || '/'}`;
+        frag.push(`<div class="item${sel.has(it)?' sel':''}"><button class="open" data-i="${i}"><span class="ft ${it.kind}">${esc(it.ext.slice(0,4)||'?')}</span><span class="tx"><span class="nm">${esc(it.name)}</span><span class="mt">${esc(where)}</span></span><span class="sz">${fmtSize(it.size)}</span></button><button class="shr" data-s="${i}" aria-label="Share ${esc(it.name)}" title="${shareLabel}">${SHARE_ICON}</button></div>`);
+      }
+    }
+    box.insertAdjacentHTML('beforeend', frag.join(''));
+    if (grid) for (let i = done; i < end; i++){ const el = box.querySelector(`[data-i="${i}"]`); if (shown[i].thumb){ el.style.backgroundImage = `url(${shown[i].thumb})`; el.classList.add('has'); } else if (shown[i].thumb !== null) thumbIO.observe(el); }
+    done = end;
+    moreIO.disconnect();
+    if (done < shown.length){ const s = document.createElement('div'); s.style.gridColumn = '1/-1'; s.style.height = '1px'; box.append(s); moreIO.observe(s); }
+    else more = null;
+  };
+  more();
+  updateSelBar();
+}
+
+$('#tabs').onclick = e => { const b = e.target.closest('[data-t]'); if (!b) return; tab = b.dataset.t; window.scrollTo(0,0); render(); };
+let qT; $('#q').oninput = e => { clearTimeout(qT); qT = setTimeout(() => { q = e.target.value.trim(); render(); }, 200); };
+$('#list').onclick = e => {
+  const d = e.target.closest('[data-d]'); if (d){ dirPath = d.dataset.d; window.scrollTo(0,0); render(); return; }
+  const s = e.target.closest('[data-s]');
+  if (s){ shareFiles([shown[+s.dataset.s].f]).catch(er => toastSheet('Tak berjaya', er.message)); return; }
+  const b = e.target.closest('[data-i]'); if (!b) return;
+  const it = shown[+b.dataset.i];
+  if (selMode){ sel.has(it) ? sel.delete(it) : sel.add(it); b.closest('.item,.tile').classList.toggle('sel'); updateSelBar(); }
+  else openView(+b.dataset.i);
+};
+
+/* ---------- thumbnails (photos + video frames), made small and cached as JPEG ---------- */
+const tq = []; let tBusy = 0, vChain = Promise.resolve();
+const thumbIO = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting){ thumbIO.unobserve(e.target); tq.push(e.target); pump(); } }), {rootMargin:'300px'});
+function pump(){
+  while (tBusy < 3 && tq.length){
+    const el = tq.shift(); if (!el.isConnected) continue;
+    const it = shown[+el.dataset.i]; if (!it) continue;
+    tBusy++;
+    makeThumb(it).then(u => {
+      if (u && el.isConnected){ el.style.backgroundImage = `url(${u})`; el.classList.add('has'); }
+      if (it.dur && el.querySelector('.b')) el.querySelector('.b').textContent = fmtDur(it.dur);
+    }).finally(() => { tBusy--; pump(); });
+  }
+}
+function canvasOf(w, h){ const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+async function makeThumb(it){
+  if (it.thumb !== undefined) return it.thumb;
+  try {
+    let c;
+    if (it.kind === 'img'){
+      const b = await createImageBitmap(it.f, {resizeWidth:320, resizeQuality:'medium'});
+      c = canvasOf(b.width, b.height); c.getContext('2d').drawImage(b, 0, 0); b.close();
+    } else { const p = vChain.then(() => grabFrame(it)); vChain = p.catch(() => {}); c = await p; }
+    it.thumb = URL.createObjectURL(await new Promise(r => c.toBlob(r, 'image/jpeg', .72)));
+  } catch { it.thumb = null; }
+  return it.thumb;
+}
+function grabFrame(it){
+  return new Promise((ok, no) => {
+    const v = document.createElement('video'), u = URL.createObjectURL(it.f);
+    const end = fn => { clearTimeout(to); v.removeAttribute('src'); v.load(); URL.revokeObjectURL(u); fn(); };
+    const to = setTimeout(() => end(no), 10000);
+    v.muted = true; v.preload = 'metadata';
+    v.onloadedmetadata = () => { it.dur = v.duration; v.currentTime = Math.min(1, (v.duration||0)/3); };
+    v.onseeked = () => { const w = 320, h = Math.round(v.videoHeight*w/v.videoWidth) || 180; const c = canvasOf(w, h); c.getContext('2d').drawImage(v, 0, 0, w, h); end(() => ok(c)); };
+    v.onerror = () => end(no);
+    v.src = u;
+  });
+}
+
+/* ---------- share & save ---------- */
+const canShareFiles = !!(navigator.canShare && navigator.canShare({files:[new File(['x'], 'x.txt', {type:'text/plain'})]}));
+let dlCap;
+async function save(blob, name){
+  if (dlCap === undefined) dlCap = window.claude && window.claude.use ? await window.claude.use('downloads').catch(() => null) : null;
+  if (dlCap){ await dlCap.save({filename:name, data:blob}); return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+// Share sheet (WhatsApp etc). Falls back to saving where the browser refuses sharing.
+async function shareFiles(files){
+  if (canShareFiles && navigator.canShare({files})){
+    try { await navigator.share({files}); return 'shared'; }
+    catch (e){ if (e.name === 'AbortError') return 'cancel'; }
+  }
+  for (const f of files) await save(f, f.name);
+  return 'saved';
+}
+const asFile = (blob, name) => blob instanceof File && blob.name === name ? blob : new File([blob], name, {type:blob.type});
+const shareLabel = canShareFiles ? 'Share' : 'Simpan';
+const SHARE_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>';
+
+/* ---------- selection ---------- */
+$('#selBtn').onclick = () => { selMode = !selMode; if (!selMode) sel.clear(); $('#selBtn').setAttribute('aria-pressed', selMode); render(); };
+function updateSelBar(){
+  $('#selbar').hidden = !selMode;
+  $('#selCount').textContent = `${sel.size} dipilih`;
+  $('#selShare').textContent = shareLabel+(sel.size ? ` (${fmtSize([...sel].reduce((a,i) => a+i.size, 0))})` : '');
+  $('#selShare').disabled = !sel.size;
+  $('#selMerge').hidden = !(sel.size > 1 && [...sel].every(i => i.kind === 'pdf'));
+}
+$('#selAll').onclick = () => { shown.forEach(i => sel.add(i)); render(); };
+$('#selShare').onclick = async () => { try { await shareFiles([...sel].map(i => i.f)); } catch (e){ toastSheet('Tak berjaya', e.message); } };
+$('#selMerge').onclick = () => runPdf(() => mergePdf([...sel]), 'gabung.pdf', 'Gabung PDF');
+
+/* ---------- viewer ---------- */
+let vList = [], vIdx = 0, vUrl = null;
+function openView(i){ vList = shown; vIdx = i; $('#view').hidden = false; document.body.style.overflow = 'hidden'; showItem(); }
+function closeView(){
+  $('#view').hidden = true; document.body.style.overflow = ''; $('#stage').innerHTML = '';
+  if (vUrl){ URL.revokeObjectURL(vUrl); vUrl = null; }
+}
+$('#vClose').onclick = closeView;
+function step(d){ const n = vIdx+d; if (n >= 0 && n < vList.length){ vIdx = n; showItem(); } }
+
+function showItem(){
+  const it = vList[vIdx], S = $('#stage');
+  if (vUrl) URL.revokeObjectURL(vUrl);
+  vUrl = URL.createObjectURL(it.f);
+  $('#vName').textContent = it.name;
+  $('#vMeta').textContent = `${vIdx+1}/${vList.length} · ${fmtSize(it.size)} · ${fmtDate(it.t)} · ${it.dir || '/'}`;
+  S.innerHTML = ''; zoom = 1; S.classList.toggle('swipe', it.kind !== 'pdf');
+  if (it.kind === 'img'){
+    const w = document.createElement('div'), im = new Image(); w.className = 'zoomwrap'; im.alt = it.name; im.src = vUrl;
+    im.onerror = () => { S.innerHTML = otherBox(it, 'Browser ni tak boleh paparkan gambar format '+it.ext.toUpperCase()+'. Share ke app lain untuk buka.'); };
+    w.ondblclick = () => setZoom(zoom > 1 ? 1 : 2);
+    w.append(im); S.append(w);
+  } else if (it.kind === 'vid'){
+    S.innerHTML = `<div class="vwrap"><video playsinline></video>
+      <div class="vbar"><button class="vc" data-v="play" aria-label="Main">▶</button><button class="vc" data-v="back" aria-label="Undur 10 saat">−10</button>
+      <span class="tm" id="tCur">0:00</span><input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="Kedudukan video"><span class="tm" id="tDur">0:00</span>
+      <button class="vc" data-v="fwd" aria-label="Maju 10 saat">+10</button><button class="vc" data-v="fs" aria-label="Skrin penuh">⛶</button></div></div>`;
+    const v = S.querySelector('video'), seek = $('#seek');
+    let dragging = false;
+    const sync = () => { if (!dragging && v.duration) seek.value = v.currentTime / v.duration * 1000; $('#tCur').textContent = fmtDur(v.currentTime); };
+    v.onloadedmetadata = () => { it.dur = v.duration; $('#tDur').textContent = fmtDur(v.duration); };
+    v.ontimeupdate = sync;
+    v.onplay = v.onpause = () => { const p = S.querySelector('[data-v="play"]'); p.textContent = v.paused ? '▶' : '❚❚'; p.setAttribute('aria-label', v.paused ? 'Main' : 'Jeda'); };
+    seek.oninput = () => { dragging = true; if (v.duration){ v.currentTime = seek.value / 1000 * v.duration; $('#tCur').textContent = fmtDur(v.currentTime); } };
+    seek.onchange = () => { dragging = false; };
+    v.onclick = () => v.paused ? v.play() : v.pause();
+    S.querySelector('.vbar').onclick = e => {
+      const k = e.target.closest('[data-v]')?.dataset.v;
+      if (k === 'play') v.paused ? v.play() : v.pause();
+      if (k === 'back') v.currentTime = Math.max(0, v.currentTime - 10);
+      if (k === 'fwd') v.currentTime = Math.min(v.duration || 0, v.currentTime + 10);
+      if (k === 'fs') (v.requestFullscreen ? v.requestFullscreen() : v.webkitEnterFullscreen?.())?.catch?.(() => {});
+    };
+    v.onerror = () => { S.innerHTML = otherBox(it, 'Format video ni tak boleh dimainkan dalam browser. Masih boleh cuba kecilkan atau share.'); };
+    v.src = vUrl;
+  } else if (it.kind === 'aud'){
+    const a = document.createElement('audio'); a.controls = true; a.src = vUrl; S.innerHTML = otherBox(it, ''); S.firstChild.append(a);
+  } else if (it.kind === 'pdf') showPdf(it, S);
+  else S.innerHTML = otherBox(it, 'Fail jenis ni tak boleh dibuka di sini. Share ke app lain untuk buka.');
+  if (vList.length > 1 && it.kind !== 'pdf'){
+    S.insertAdjacentHTML('beforeend', `<button class="nav l" aria-label="Sebelum"${vIdx?'':' hidden'}>‹</button><button class="nav r" aria-label="Seterusnya"${vIdx<vList.length-1?'':' hidden'}>›</button>`);
+    S.querySelector('.nav.l').onclick = () => step(-1); S.querySelector('.nav.r').onclick = () => step(1);
+  }
+  const acts = [`<button class="vb${it.kind==='vid'?'':' pri'}" data-a="share">${shareLabel}${it.kind==='vid' && it.size > WA_LIMIT ? ' asal' : ''}</button>`];
+  if (it.kind === 'img' || it.kind === 'pdf') acts.unshift(`<button class="vb" data-a="zoom" id="zoomBtn">Zoom 1×</button>`);
+  if (it.kind === 'vid') acts.push(`<button class="vb pri" data-a="wa">Kecilkan untuk WhatsApp</button>`);
+  if (it.kind === 'pdf') acts.push(`<button class="vb pri" data-a="pdf">Tool PDF</button>`);
+  $('#vActs').innerHTML = acts.join('');
+}
+function otherBox(it, msg){ return `<div class="other"><span class="ft ${it.kind}">${esc(it.ext||'?')}</span><b>${esc(it.name)}</b><span>${fmtSize(it.size)}</span>${msg ? `<span>${esc(msg)}</span>` : ''}</div>`; }
+
+$('#vActs').onclick = async e => {
+  const a = e.target.closest('[data-a]')?.dataset.a, it = vList[vIdx]; if (!a) return;
+  if (a === 'share'){ try { await shareFiles([it.f]); } catch (er){ toastSheet('Tak berjaya', er.message); } }
+  if (a === 'zoom') setZoom(zoom >= 3 ? 1 : zoom+1);
+  if (a === 'wa') waSheet(it);
+  if (a === 'pdf') pdfSheet(it);
+};
+// Zoom: bigger image / pages inside a scroll box, so you can scroll around them
+let zoom = 1;
+function setZoom(z){
+  zoom = z; const S = $('#stage');
+  if ($('#zoomBtn')) $('#zoomBtn').textContent = `Zoom ${z}×`;
+  S.classList.toggle('swipe', z === 1 && !S.querySelector('.pdfv'));
+  const w = S.querySelector('.zoomwrap');
+  if (w){
+    const im = w.querySelector('img'), fit = Math.min(w.clientWidth/im.naturalWidth, w.clientHeight/im.naturalHeight, 1);
+    w.classList.toggle('z', z > 1);
+    im.style.width = z > 1 ? Math.round(im.naturalWidth*fit*z)+'px' : '';
+  }
+  const box = S.querySelector('.pdfv');
+  if (box){
+    const r = box.scrollTop / (box.scrollHeight || 1);
+    box.style.setProperty('--z', z);
+    box.scrollTop = r * box.scrollHeight;
+    box.querySelectorAll('.pg').forEach(pg => box._io.observe(pg)); // re-render sharp at the new size
+  }
+}
+// swipe + keys
+let sx = null;
+$('#stage').addEventListener('pointerdown', e => { sx = zoom > 1 || e.target.closest('video,audio,.pdfv,.vbar') ? null : e.clientX; });
+$('#stage').addEventListener('pointerup', e => { if (sx !== null && Math.abs(e.clientX-sx) > 60) step(e.clientX < sx ? 1 : -1); sx = null; });
+document.addEventListener('keydown', e => {
+  if (!$('#scrim').hidden){ if (e.key === 'Escape') closeSheet(); return; }
+  if ($('#view').hidden) return;
+  if (e.key === 'Escape') closeView();
+  if (e.key === 'ArrowRight') step(1);
+  if (e.key === 'ArrowLeft') step(-1);
+});
+
+/* ---------- libraries, loaded only when needed ---------- */
+const CDN = 'https://cdnjs.cloudflare.com/ajax/libs/';
+const LIB = {pdfjs:CDN+'pdf.js/3.11.174/pdf.min.js', worker:CDN+'pdf.js/3.11.174/pdf.worker.min.js', pdflib:CDN+'pdf-lib/1.17.1/pdf-lib.min.js', zip:CDN+'jszip/3.10.1/jszip.min.js'};
+const MEDIABUNNY = 'https://cdn.jsdelivr.net/npm/mediabunny@1.62.1/dist/bundles/mediabunny.min.mjs';
+const loaded = {};
+function lib(k){
+  return loaded[k] ??= new Promise((ok, no) => {
+    const s = document.createElement('script'); s.src = LIB[k]; s.onload = ok;
+    s.onerror = () => { delete loaded[k]; no(new Error('Tak dapat muat komponen. Semak sambungan internet.')); };
+    document.head.append(s);
+  });
+}
+async function pdfjs(){ await lib('pdfjs'); await lib('worker'); pdfjsLib.GlobalWorkerOptions.workerSrc = LIB.worker; return pdfjsLib; }
+
+/* ---------- PDF viewer ---------- */
+let pdfToken = 0;
+async function showPdf(it, S){
+  const tok = ++pdfToken;
+  S.innerHTML = `<div class="other">Membuka PDF…</div>`;
+  try {
+    const J = await pdfjs();
+    const doc = await J.getDocument({data:new Uint8Array(await it.f.arrayBuffer())}).promise;
+    if (tok !== pdfToken) return;
+    const first = (await doc.getPage(1)).getViewport({scale:1});
+    const box = document.createElement('div'); box.className = 'pdfv';
+    const io = new IntersectionObserver(es => es.forEach(async e => {
+      if (!e.isIntersecting) return; io.unobserve(e.target);
+      const page = await doc.getPage(+e.target.dataset.p);
+      const w = Math.min(4000, e.target.clientWidth * Math.min(2, devicePixelRatio || 1));
+      const vp = page.getViewport({scale: w / page.getViewport({scale:1}).width});
+      const c = canvasOf(Math.ceil(vp.width), Math.ceil(vp.height));
+      await page.render({canvasContext:c.getContext('2d'), viewport:vp}).promise;
+      e.target.style.aspectRatio = ''; e.target.replaceChildren(c);
+    }), {root:box, rootMargin:'600px'});
+    box._io = io;
+    for (let p = 1; p <= doc.numPages; p++){
+      const d = document.createElement('div'); d.className = 'pg'; d.dataset.p = p; d.style.aspectRatio = `${first.width}/${first.height}`;
+      box.append(d); io.observe(d);
+    }
+    S.innerHTML = ''; S.append(box);
+    $('#vMeta').textContent += ` · ${doc.numPages} halaman`;
+    it.pages = doc.numPages;
+  } catch (e){
+    if (tok === pdfToken) S.innerHTML = otherBox(it, /password/i.test(e.name+e.message) ? 'PDF ni berkata laluan.' : 'Tak dapat buka PDF ni: '+e.message);
+  }
+}
+
+/* ---------- bottom sheet ---------- */
+let onSheetClose = null;
+function sheet(html){ $('#sheet').innerHTML = html; $('#scrim').hidden = false; const f = $('#sheet').querySelector('button,input'); f && f.focus(); }
+function closeSheet(){ if (onSheetClose){ onSheetClose(); onSheetClose = null; } $('#scrim').hidden = true; $('#sheet').innerHTML = ''; }
+$('#scrim').onclick = e => { if (e.target === $('#scrim') && !busy) closeSheet(); };
+function toastSheet(title, msg){ sheet(`<h3>${esc(title)}</h3><p class="note bad">${esc(msg)}</p><button class="btn ghost" data-close>Tutup</button>`); }
+$('#sheet').addEventListener('click', e => { if (e.target.closest('[data-close]')) closeSheet(); });
+const seg = (id, opts, val) => `<div class="seg" id="${id}">${opts.map(([v,l]) => `<button data-v="${v}" aria-pressed="${v==val}">${l}</button>`).join('')}</div>`;
+const segVal = id => $('#'+id+' [aria-pressed="true"]').dataset.v;
+$('#sheet').addEventListener('click', e => { const b = e.target.closest('.seg button'); if (!b) return; for (const x of b.parentNode.children) x.setAttribute('aria-pressed', x === b); b.parentNode.dispatchEvent(new Event('change')); });
+
+// Result card: one place to share or save anything the tools make.
+function resultSheet(blob, name, title, note){
+  const file = asFile(blob, name);
+  sheet(`<h3>${esc(title)}</h3>
+    <div><div class="big">${fmtSize(blob.size)}</div><p class="note">${esc(note||'')}</p></div>
+    <p class="note mono" style="overflow-wrap:anywhere">${esc(name)}</p>
+    <div class="btns">${canShareFiles ? `<button class="btn" id="rShare">Share ke WhatsApp…</button>` : ''}<button class="btn ${canShareFiles?'ghost':''}" id="rSave">Simpan ke peranti</button></div>
+    <p class="note" id="rMsg"></p>
+    <button class="btn ghost" data-close>Tutup</button>`);
+  const msg = (t, c = '') => { $('#rMsg').className = 'note '+c; $('#rMsg').textContent = t; };
+  if ($('#rShare')) $('#rShare').onclick = async () => { const r = await shareFiles([file]).catch(e => msg(e.message, 'bad')); if (r === 'saved') msg('Share tak dibenarkan di sini, jadi fail disimpan. Buka dari Files/Galeri untuk hantar.', 'ok'); };
+  $('#rSave').onclick = async () => { try { await save(file, name); msg('Disimpan: '+name, 'ok'); } catch (e){ msg(e && e.code === 'declined' ? 'Simpanan dibatalkan.' : 'Tak dapat simpan: '+(e.message||e.code), 'bad'); } };
+}
+
+/* ---------- video: compress for WhatsApp (WebCodecs via mediabunny) ---------- */
+let busy = false;
+function waSheet(it){
+  const small = it.size <= WA_LIMIT;
+  sheet(`<h3>Kecilkan untuk WhatsApp</h3>
+    <p class="note ${small?'ok':''}">${small ? `Video ni ${fmtSize(it.size)}, dah bawah had WhatsApp. Boleh terus share, atau kecilkan lagi.` : `Saiz asal ${fmtSize(it.size)}${it.dur ? ' · '+fmtDur(it.dur) : ''}. WhatsApp hadkan video lebih kurang 32 MB.`}</p>
+    <div><span class="k">Saiz maksimum</span>${seg('cT', [[30,'30 MB'],[25,'25 MB'],[16,'16 MB'],[8,'8 MB']], 30)}</div>
+    <div><span class="k">Kualiti tertinggi</span>${seg('cR', [[1080,'1080p'],[720,'720p'],[480,'480p']], 720)}</div>
+    <p class="note mono" id="cEst"></p>
+    <div id="cIdle" class="btns"><button class="btn" id="cGo">Mula kecilkan</button><button class="btn ghost" data-close>Batal</button></div>
+    <div id="cRun" hidden style="display:flex;flex-direction:column;gap:10px">
+      <div class="prog"><i id="cBar"></i></div><p class="note mono" id="cProg">Menyediakan…</p>
+      <p class="note">Biarkan skrin terbuka sampai siap.</p>
+      <button class="btn ghost" id="cStop">Berhenti</button>
+    </div>`);
+  $('#cRun').hidden = true;
+  const est = () => {
+    if (!it.dur){ $('#cEst').textContent = ''; return; }
+    const p = plan(+segVal('cT'), +segVal('cR'), it.dur, 0.92);
+    $('#cEst').textContent = p.vb < 120e3 ? 'Video terlalu panjang untuk saiz ni. Pilih saiz lebih besar.' : `Anggaran: ${p.short}p · video ${Math.round(p.vb/1000)} kbps`;
+  };
+  $('#cT').addEventListener('change', est); $('#cR').addEventListener('change', est); est();
+  $('#cGo').onclick = async () => {
+    let stop = null, wake = null, stopped = false;
+    busy = true; $('#cIdle').hidden = true; $('#cRun').hidden = false;
+    $('#cStop').onclick = () => { stopped = true; stop && stop(); };
+    onSheetClose = () => { stopped = true; stop && stop(); };
+    try { wake = await navigator.wakeLock?.request('screen'); } catch {}
+    const t0 = performance.now();
+    try {
+      const r = await compressVideo(it, +segVal('cT'), +segVal('cR'), (p, n) => {
+        $('#cBar').style.width = (p*100).toFixed(1)+'%';
+        const el = (performance.now()-t0)/1000;
+        $('#cProg').textContent = `${Math.floor(p*100)}%${n > 1 ? ' · cubaan '+n : ''}${p > .03 ? ' · baki ~'+fmtDur(el/p-el) : ''}`;
+      }, fn => stop = fn);
+      busy = false; onSheetClose = null;
+      if (stopped) return closeSheet();
+      resultSheet(r.blob, baseName(it.name).slice(0,60)+'_WA.mp4', 'Video siap',
+        `Dari ${fmtSize(it.size)} · ${r.short}p · jimat ${Math.max(0, Math.round((1-r.blob.size/it.size)*100))}%${r.note ? ' · '+r.note : ''}`);
+    } catch (e){
+      busy = false; onSheetClose = null;
+      if (stopped) return closeSheet();
+      toastSheet('Tak dapat kecilkan', e.message || String(e));
+    } finally { try { await wake?.release(); } catch {} }
+  };
+}
+// bitrate & resolution for a target size; factor leaves room for MP4 overhead
+function plan(targetMB, maxShort, dur, factor, srcShort = 1e9){
+  const total = targetMB*MB*8*factor/dur;
+  const ab = total > 1.2e6 ? 128e3 : total > 4e5 ? 96e3 : 64e3;
+  const vb = Math.min(8e6, Math.floor(total-ab));
+  const short = Math.min(maxShort, srcShort, vb < 4e5 ? 360 : vb < 9e5 ? 480 : vb < 2e6 ? 720 : 1080);
+  return {ab, vb, short};
+}
+async function compressVideo(it, targetMB, maxShort, onP, setStop){
+  const M = await import(MEDIABUNNY).catch(() => { throw new Error('Tak dapat muat komponen video. Semak sambungan internet.'); });
+  if (!(await M.canEncodeVideo('avc'))) throw new Error('Browser ni tak boleh buat video MP4 (H.264). Guna Chrome versi terbaru.');
+  const aac = await M.canEncodeAudio('aac');
+  let factor = 0.92;
+  for (let n = 1; n <= 3; n++){
+    const input = new M.Input({source:new M.BlobSource(it.f), formats:M.ALL_FORMATS});
+    const vt = await input.getPrimaryVideoTrack();
+    if (!vt) throw new Error('Fail ni tiada video.');
+    const dur = await input.computeDuration(); it.dur = dur;
+    const dw = vt.displayWidth, dh = vt.displayHeight;
+    const p = plan(targetMB, maxShort, dur, factor, Math.min(dw, dh));
+    if (p.vb < 120e3) throw new Error(`Video ${fmtDur(dur)} terlalu panjang untuk muat dalam ${targetMB} MB. Pilih saiz lebih besar.`);
+    const s = p.short / Math.min(dw, dh), even = x => Math.max(2, Math.round(x*s/2)*2);
+    // 60fps phone videos waste bitrate; cap at 30
+    const fps = (await vt.computePacketStats(100).catch(() => ({}))).averagePacketRate || 30;
+    const output = new M.Output({format:new M.Mp4OutputFormat({fastStart:'in-memory'}), target:new M.BufferTarget()});
+    const conv = await M.Conversion.init({input, output, tracks:'primary',
+      video:{codec:'avc', width:even(dw), height:even(dh), fit:'contain', ...(fps > 31 ? {frameRate:30} : {}), quality:new M.Quality({bitrate:p.vb}), forceTranscode:true},
+      audio:{codec:aac ? 'aac' : 'opus', quality:new M.Quality({bitrate:p.ab}), numberOfChannels:2, forceTranscode:true}});
+    if (!conv.isValid) throw new Error('Format video ni tak boleh diproses dalam browser ni.');
+    const lostAudio = conv.discardedTracks.some(d => d.track.type === 'audio' && d.reason !== 'max_track_count_of_type_reached');
+    conv.onProgress = x => onP(x, n);
+    setStop(() => conv.cancel());
+    await conv.execute();
+    const buf = output.target.buffer;
+    if (buf.byteLength <= targetMB*MB) return {blob:new Blob([buf], {type:'video/mp4'}), short:p.short,
+      note: lostAudio ? 'tanpa audio (format audio tak disokong)' : aac ? '' : 'audio Opus, mungkin tak main di phone lama'};
+    factor *= targetMB*MB / buf.byteLength * 0.95;
+  }
+  throw new Error('Tak dapat capai saiz sasaran selepas 3 cubaan. Pilih saiz lebih besar.');
+}
+
+/* ---------- PDF tools (same methods as PDF Toolkit) ---------- */
+const PDF_TOOLKIT = 'https://syaminramli.github.io/rak-fail/pdf.html';
+// On the hosted site PDF Toolkit is same-origin, so the file can be handed over via IndexedDB.
+const ON_SITE = /(^|\.)github\.io$|^localhost$|^127\.0\.0\.1$/.test(location.hostname);
+const TK_TOOLS = [
+  ['sign','Tandatangan','Lukis atau taip, letak di mana-mana'],
+  ['fill','Isi borang','Taip teks, tanda ✓ ✗, tarikh'],
+  ['stamp','Cop palang','“Untuk kegunaan peribadi sahaja”'],
+  ['watermark','Tera air','SULIT / DRAF atas semua halaman'],
+  ['numbers','Nombor halaman','Tambah nombor muka surat'],
+  ['organize','Susun halaman','Ubah turutan, putar, padam'],
+  ['split','Pisah PDF','Ikut julat atau setiap halaman'],
+  ['nup','Susun cetak','2/4 halaman sehelai, saiz IC'],
+  ['merge','Gabung','Tambah PDF lain di sana'],
+  ['text','Ekstrak teks','Salin teks dari PDF'],
+];
+function kv(op, key, val){
+  return new Promise((ok, no) => {
+    const o = indexedDB.open('rakfail', 1);
+    o.onupgradeneeded = () => o.result.createObjectStore('kv');
+    o.onerror = () => no(o.error);
+    o.onsuccess = () => {
+      const s = o.result.transaction('kv', op === 'get' ? 'readonly' : 'readwrite').objectStore('kv');
+      const r = op === 'get' ? s.get(key) : op === 'put' ? s.put(val, key) : s.delete(key);
+      r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error);
+    };
+  });
+}
+// New tab, so the drive list here stays loaded.
+async function openToolkit(tool, files){
+  const w = window.open('', '_blank');
+  try { await kv('put', 'handoff', {t:Date.now(), files}); }
+  catch { if (w) w.close(); return toastSheet('Tak dapat buka', 'Browser tak benarkan simpan sementara. Buka PDF Toolkit dan pilih fail di sana.'); }
+  const url = 'pdf.html#' + tool;
+  if (w) w.location.href = url; else location.href = url;
+}
+function pdfSheet(it){
+  sheet(`<h3>Tool PDF</h3><p class="note">${esc(it.name)} · ${fmtSize(it.size)}${it.pages ? ' · '+it.pages+' halaman' : ''}</p>
+    <div><span class="k">Terus di sini</span><div class="acts">
+      <button data-p="compress"><b>Kecilkan saiz</b><small>Sesuai untuk PDF hasil scan / banyak gambar</small></button>
+      <button data-p="extract"><b>Ambil halaman tertentu</b><small>Contoh: 1-3, 5 jadi satu PDF baru</small></button>
+      <button data-p="rotate"><b>Putar semua halaman</b><small>90° ikut jam</small></button>
+      <button data-p="images"><b>Tukar jadi gambar</b><small>Setiap halaman jadi JPG, senang hantar di WhatsApp</small></button>
+    </div></div>
+    <div id="pExtra"></div>
+    <div><span class="k">Lagi tool${ON_SITE ? ' · fail ni terus dimuatkan' : ' · pilih fail sekali lagi di sana'}</span>
+    <div class="tgrid">${TK_TOOLS.map(([k,b,s]) => ON_SITE
+      ? `<button data-t="${k}"><b>${b}</b><small>${s}</small></button>`
+      : `<a href="${PDF_TOOLKIT}#${k}" target="_blank" rel="noopener"><b>${b}</b><small>${s}</small></a>`).join('')}</div></div>
+    <button class="btn ghost" data-close>Tutup</button>`);
+  const g = $('#sheet .tgrid');
+  g.onclick = e => { const k = e.target.closest('button[data-t]')?.dataset.t; if (k) openToolkit(k, [it.f]); };
+  $('#sheet .acts').onclick = e => {
+    const k = e.target.closest('[data-p]')?.dataset.p; if (!k) return;
+    const b = baseName(it.name);
+    if (k === 'compress'){
+      $('#pExtra').innerHTML = `<span class="k">Tahap</span>${seg('pL', [['high','Kuat'],['med','Sederhana'],['low','Ringan']], 'med')}<p class="note">Halaman jadi gambar, jadi teks tak boleh dipilih lagi.</p><button class="btn" id="pGo">Kecilkan</button>`;
+      $('#pGo').onclick = () => runPdf(() => compressPdf(it, segVal('pL')), b+'_kecil.pdf', 'PDF dikecilkan', it.size);
+    }
+    if (k === 'extract'){
+      $('#pExtra').innerHTML = `<span class="k">Halaman</span><input class="inp" id="pR" placeholder="cth: 1-3, 5, 8-end" inputmode="text"><p class="note bad" id="pErr"></p><button class="btn" id="pGo">Ambil halaman</button>`;
+      $('#pGo').onclick = () => runPdf(() => extractPdf(it, $('#pR').value), b+'_petikan.pdf', 'Halaman diambil');
+    }
+    if (k === 'rotate') runPdf(() => rotatePdf(it), b+'_putar.pdf', 'PDF diputar');
+    if (k === 'images') runPdf(() => pdfToImages(it), null, 'Halaman jadi gambar');
+  };
+}
+async function runPdf(fn, name, title, origSize){
+  busy = true;
+  sheet(`<h3>${esc(title)}</h3><div class="prog"><i id="pBar" style="width:30%"></i></div><p class="note" id="pProg">Sedang proses…</p>`);
+  try {
+    const r = await fn();
+    busy = false;
+    if (Array.isArray(r)) return imagesSheet(r, title);
+    const note = origSize ? (r.size < origSize ? `Dari ${fmtSize(origSize)} · jimat ${Math.round((1-r.size/origSize)*100)}%` : `Hasil tak lebih kecil dari asal (${fmtSize(origSize)}). Cuba tahap "Kuat".`) : '';
+    resultSheet(r, name, title, note);
+  } catch (e){ busy = false; toastSheet('Tak berjaya', e.message || String(e)); }
+}
+const pdfProg = f => { const b = $('#pBar'); if (b) b.style.width = Math.round(f*100)+'%'; };
+async function libDoc(it){
+  await lib('pdflib');
+  try { return await PDFLib.PDFDocument.load(await it.f.arrayBuffer()); }
+  catch (e){ throw new Error(/encrypt/i.test(e.message) ? `"${it.name}" berkata laluan. Buka kunci dulu.` : `"${it.name}" tak boleh dibaca sebagai PDF.`); }
+}
+async function renderPages(it, scale, q, each){
+  const J = await pdfjs(), doc = await J.getDocument({data:new Uint8Array(await it.f.arrayBuffer())}).promise;
+  for (let i = 1; i <= doc.numPages; i++){
+    const page = await doc.getPage(i), base = page.getViewport({scale:1}), vp = page.getViewport({scale});
+    const c = canvasOf(Math.ceil(vp.width), Math.ceil(vp.height)), x = c.getContext('2d');
+    x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+    await page.render({canvasContext:x, viewport:vp, intent:'print'}).promise;
+    await each(await new Promise(r => c.toBlob(r, 'image/jpeg', q)), base, i);
+    pdfProg(i/doc.numPages);
+  }
+}
+async function compressPdf(it, level){
+  const [scale, q] = {high:[1.0,.45], med:[1.4,.6], low:[2.0,.78]}[level];
+  await lib('pdflib'); const out = await PDFLib.PDFDocument.create();
+  await renderPages(it, scale, q, async (jpg, base) => {
+    const img = await out.embedJpg(await jpg.arrayBuffer());
+    out.addPage([base.width, base.height]).drawImage(img, {x:0, y:0, width:base.width, height:base.height});
+  });
+  return new Blob([await out.save()], {type:'application/pdf'});
+}
+function parseRanges(str, max){
+  const out = [];
+  for (const part of str.split(',').map(s => s.trim()).filter(Boolean)){
+    const m = part.match(/^(\d+)\s*(?:-\s*(\d+|end))?$/i);
+    if (!m) throw new Error(`Julat tak sah: "${part}"`);
+    const a = +m[1], b = m[2] ? (/end/i.test(m[2]) ? max : +m[2]) : a;
+    if (a < 1 || b > max || a > b) throw new Error(`Julat "${part}" luar dari 1–${max}`);
+    for (let i = a; i <= b; i++) out.push(i);
+  }
+  if (!out.length) throw new Error('Masukkan nombor halaman, cth: 1-3, 5');
+  return out;
+}
+async function extractPdf(it, ranges){
+  const src = await libDoc(it), pages = parseRanges(ranges, src.getPageCount());
+  const out = await PDFLib.PDFDocument.create();
+  (await out.copyPages(src, pages.map(p => p-1))).forEach(p => out.addPage(p));
+  return new Blob([await out.save()], {type:'application/pdf'});
+}
+async function rotatePdf(it){
+  const d = await libDoc(it);
+  d.getPages().forEach(p => p.setRotation(PDFLib.degrees((p.getRotation().angle+90) % 360)));
+  return new Blob([await d.save()], {type:'application/pdf'});
+}
+async function mergePdf(list){
+  await lib('pdflib'); const out = await PDFLib.PDFDocument.create();
+  for (let i = 0; i < list.length; i++){
+    const src = await libDoc(list[i]);
+    (await out.copyPages(src, src.getPageIndices())).forEach(p => out.addPage(p));
+    pdfProg((i+1)/list.length);
+  }
+  return new Blob([await out.save()], {type:'application/pdf'});
+}
+async function pdfToImages(it){
+  const files = [], b = baseName(it.name);
+  await renderPages(it, 2, .85, async (jpg, _, i) => files.push(new File([jpg], `${b}_hlm${i}.jpg`, {type:'image/jpeg'})));
+  return files;
+}
+function imagesSheet(files, title){
+  sheet(`<h3>${esc(title)}</h3><div class="big">${files.length} gambar</div><p class="note">${fmtSize(files.reduce((a,f) => a+f.size, 0))} semua sekali</p>
+    <div class="btns">${canShareFiles ? `<button class="btn" id="iShare">Share semua…</button>` : ''}<button class="btn ${canShareFiles?'ghost':''}" id="iZip">Simpan sebagai ZIP</button></div>
+    <p class="note" id="iMsg"></p><button class="btn ghost" data-close>Tutup</button>`);
+  const msg = (t, c = '') => { $('#iMsg').className = 'note '+c; $('#iMsg').textContent = t; };
+  if ($('#iShare')) $('#iShare').onclick = () => shareFiles(files).catch(e => msg(e.message, 'bad'));
+  $('#iZip').onclick = async () => {
+    try { await lib('zip'); const z = new JSZip(); files.forEach(f => z.file(f.name, f)); const name = files[0].name.replace(/_hlm1\.jpg$/, '_gambar.zip');
+      await save(await z.generateAsync({type:'blob'}), name); msg('Disimpan: '+name, 'ok'); }
+    catch (e){ msg(e && e.code === 'declined' ? 'Simpanan dibatalkan.' : 'Tak dapat simpan: '+(e.message||e.code), 'bad'); }
+  };
+}
+
+/* ---------- Android app: install, offline, and files from the phone's Share menu (hosted site only) ---------- */
+if (ON_SITE){
+  for (const [rel, href] of [['manifest', 'rak.webmanifest'], ['apple-touch-icon', 'icons/rak-192.png']]){
+    const l = document.createElement('link'); l.rel = rel; l.href = href; document.head.append(l);
+  }
+  const tc = document.createElement('meta'); tc.name = 'theme-color'; tc.content = '#2f55d4'; document.head.append(tc);
+  navigator.serviceWorker?.register('sw.js').catch(() => {});
+  document.querySelectorAll('.homelink').forEach(a => a.hidden = false);
+  let installEvt = null;
+  addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; document.querySelectorAll('.install').forEach(b => b.hidden = false); });
+  document.querySelectorAll('.install').forEach(b => b.onclick = async () => {
+    if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null;
+    document.querySelectorAll('.install').forEach(x => x.hidden = true);
+  });
+  if (new URLSearchParams(location.search).has('shared')) (async () => {
+    history.replaceState(null, '', location.pathname);
+    try {
+      const s = await kv('get', 'shared'); await kv('del', 'shared');
+      if (!s || !s.files.length) return;
+      for (const f of s.files) addFile(f, 'Dikongsi/'+f.name);
+      const first = items.find(i => i.f === s.files[0]);
+      if (first) tab = first.kind;
+      ingest([]);
+      if (s.files.length === 1 && first) openView(shown.indexOf(first));
+    } catch {}
+  })();
+}
+</script>

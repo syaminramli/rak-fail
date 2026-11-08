@@ -30,6 +30,8 @@
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 header{display:flex;align-items:center;gap:12px;padding-block:14px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));border-bottom:1px solid var(--line);background:var(--panel)}
 header h1{font-size:18px;margin:0;letter-spacing:-.01em;cursor:pointer;white-space:nowrap}
+.homelink{flex:none;display:grid;place-items:center;width:36px;height:36px;border:1px solid var(--line);border-radius:10px;color:var(--ink);text-decoration:none;font-size:17px}
+.homelink:hover{border-color:var(--accent);color:var(--accent)}
 header h1 b{color:var(--accent)}
 header .tag{margin-left:auto;font-size:12px;color:var(--muted);text-align:right}
 .lang{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;flex:none}
@@ -190,6 +192,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:20px}
 @media (prefers-reduced-motion: reduce){ *{transition:none!important} }
 </style>
 <header>
+  <a class="homelink" href="./" title="Halaman utama" aria-label="Halaman utama">⌂</a>
   <h1 id="home"><b>PDF</b> Toolkit</h1>
   <span class="tag" data-en="🔒 Everything runs in your browser — files are never uploaded" data-ms="🔒 Semua proses dalam browser — fail tak di-upload"></span>
   <div class="lang" role="group" aria-label="Language">

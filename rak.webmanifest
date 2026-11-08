@@ -16,11 +16,12 @@
     {"src": "icons/rak-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
   ],
   "shortcuts": [
+    {"name": "Buka hard disk", "url": "./rak.html", "icons": [{"src": "icons/rak-192.png", "sizes": "192x192"}]},
     {"name": "PDF Toolkit", "url": "./pdf.html", "icons": [{"src": "icons/pdf-192.png", "sizes": "192x192"}]},
     {"name": "WA Video Compressor", "url": "./video.html", "icons": [{"src": "icons/video-192.png", "sizes": "192x192"}]}
   ],
   "share_target": {
-    "action": "./?share=1",
+    "action": "./rak.html?share=1",
     "method": "POST",
     "enctype": "multipart/form-data",
     "params": {"files": [{"name": "files", "accept": ["image/*", "video/*", "audio/*", "application/pdf", "*/*"]}]}
