@@ -123,7 +123,7 @@ main{padding-block:0 120px}
 .big{font:500 26px var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 input[type=file]{display:none}
-@media (max-width:480px){.brand{display:none}}
+.busy{position:fixed;z-index:8;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));max-width:calc(100% - 32px);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:13.5px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.2);font-variant-numeric:tabular-nums;text-align:center}@media (max-width:480px){.brand{display:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -161,6 +161,7 @@ input[type=file]{display:none}
 <input type="file" id="pickDir" webkitdirectory multiple>
 <input type="file" id="pickFiles" multiple>
 
+<div class="busy" id="busy" role="status" hidden></div>
 <div class="selbar" id="selbar" hidden><div class="wrap">
   <b id="selCount">0 dipilih</b>
   <button class="btn ghost" id="selAll">Pilih semua</button>
@@ -194,27 +195,82 @@ const KIND = {img:/^(jpe?g|png|gif|webp|bmp|avif|heic|heif)$/, vid:/^(mp4|m4v|mo
 const TABS = [['img','Gambar'],['vid','Video'],['pdf','PDF'],['aud','Audio'],['oth','Lain'],['dir','Folder'],['dup','Pendua']];
 let items = [], tab = 'img', sort = 'new', q = '', dirPath = '', selMode = false, sel = new Set(), shown = [];
 
-function ingest(list){
-  const seen = new Set(items.map(i => i.path+'|'+i.size));
-  for (const f of list){
-    const path = f.webkitRelativePath || f.name;
-    // skip hidden and system junk (.Trashes, ._files, recycle bin)
-    if (/(^|\/)(\.|System Volume Information\/|\$RECYCLE\.BIN\/)/i.test(path)) continue;
-    const key = path+'|'+f.size; if (seen.has(key)) continue; seen.add(key);
-    const ext = (f.name.match(/\.([^.]+)$/) || [, ''])[1].toLowerCase();
-    const kind = Object.keys(KIND).find(k => KIND[k].test(ext)) || 'oth';
-    items.push({f, path, name:f.name, ext, kind, size:f.size, t:f.lastModified, dir:path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''});
-  }
-  if (!items.length){ $('#startNote').textContent = 'Tiada fail dijumpai dalam pilihan tu. Cuba pilih folder lain.'; return; }
+const seenKeys = new Set();
+function addFile(f, path){
+  // skip hidden and system junk (.Trashes, ._files, recycle bin)
+  if (/(^|\/)(\.|System Volume Information\/|\$RECYCLE\.BIN\/)/i.test(path)) return;
+  const key = path+'|'+f.size; if (seenKeys.has(key)) return; seenKeys.add(key);
+  const ext = (f.name.match(/\.([^.]+)$/) || [, ''])[1].toLowerCase();
+  const kind = Object.keys(KIND).find(k => KIND[k].test(ext)) || 'oth';
+  items.push({f, path, name:f.name, ext, kind, size:f.size, t:f.lastModified, dir:path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''});
+}
+function showApp(){
+  if (!$('#top').hidden) return;
   const counts = {}; items.forEach(i => counts[i.kind] = (counts[i.kind]||0)+1);
   if (!counts[tab]) tab = ['img','vid','pdf','aud','oth'].find(k => counts[k]) || 'dir';
   $('#start').hidden = true; $('#top').hidden = false; $('#list').hidden = false;
   render();
 }
-$('#openDir').onclick = () => $('#pickDir').click();
+function ingest(list){
+  for (const f of list) addFile(f, f.webkitRelativePath || f.name);
+  busyNote('');
+  if (!items.length){ $('#startNote').textContent = 'Tiada fail dijumpai dalam pilihan tu. Cuba pilih folder lain.'; return; }
+  if ($('#top').hidden) showApp(); else render();
+}
+
+// Status pill: big drives take a while to list, so always show something is happening.
+let busyT;
+function busyNote(msg, autoHide){
+  clearTimeout(busyT);
+  $('#busy').hidden = !msg; $('#busy').textContent = msg;
+  if (autoHide) busyT = setTimeout(() => $('#busy').hidden = true, 4000);
+}
+
+// Folder scan that shows files as they are found (Chrome with folder access).
+// Old way (webkitdirectory) makes the browser list the whole drive before the page gets anything.
+const SKIP_DIR = /^(\.|\$RECYCLE\.BIN$|System Volume Information$|LOST\.DIR$)/i;
+async function scanDir(root){
+  const stack = [[root, root.name]];
+  let n = 0, last = 0;
+  busyNote('Membaca hard disk… 0 fail');
+  while (stack.length){
+    const [dir, path] = stack.pop(), files = [];
+    try {
+      for await (const [name, h] of dir.entries()){
+        if (h.kind === 'directory'){ if (!SKIP_DIR.test(name)) stack.push([h, path+'/'+name]); }
+        else files.push([h, path+'/'+name]);
+      }
+    } catch { continue; } // folder we may not read; keep going
+    for (let i = 0; i < files.length; i += 32){
+      const got = await Promise.all(files.slice(i, i+32).map(([h, p]) => h.getFile().then(f => [f, p], () => null)));
+      for (const g of got) if (g){ addFile(g[0], g[1]); n++; }
+      if (performance.now()-last > 1000){ last = performance.now(); scanTick(n); }
+    }
+  }
+  scanTick(n, true);
+}
+function scanTick(n, done){
+  busyNote(done ? `Siap: ${n.toLocaleString('ms-MY')} fail dibaca` : `Membaca hard disk… ${n.toLocaleString('ms-MY')} fail`, done);
+  if (!items.length){ if (done) $('#startNote').textContent = 'Tiada fail dijumpai dalam folder tu.'; return; }
+  if ($('#top').hidden) return showApp();
+  // don't yank the list from under someone who is scrolling or viewing
+  if (window.scrollY < 80 && $('#view').hidden && !selMode) render(); else renderTabs();
+}
+
+async function openFolder(){
+  if (window.showDirectoryPicker && window.top === window){
+    try { return await scanDir(await showDirectoryPicker({mode:'read'})); }
+    catch (e){ if (e.name === 'AbortError') return; }
+  }
+  busyNote('Browser sedang senaraikan semua fail… hard disk besar boleh ambil beberapa minit. Jangan tutup page ni.');
+  $('#pickDir').click();
+}
+$('#openDir').onclick = $('#addBtn').onclick = openFolder;
 $('#openFiles').onclick = () => $('#pickFiles').click();
-$('#addBtn').onclick = () => $('#pickDir').click();
-for (const id of ['#pickDir','#pickFiles']) $(id).onchange = e => { ingest(e.target.files); e.target.value = ''; };
+for (const id of ['#pickDir','#pickFiles']){
+  $(id).onchange = e => { ingest(e.target.files); e.target.value = ''; };
+  $(id).addEventListener('cancel', () => busyNote(''));
+}
 
 /* ---------- list rendering ---------- */
 function filtered(){
