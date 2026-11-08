@@ -1,0 +1,23 @@
+{
+  "id": "/rak-fail/pdf.html",
+  "name": "PDF Toolkit",
+  "short_name": "PDF Toolkit",
+  "description": "Tandatangan, isi borang, cop palang, gabung, pisah dan kecilkan PDF.",
+  "start_url": "./pdf.html",
+  "scope": "./pdf.html",
+  "display": "standalone",
+  "background_color": "#141416",
+  "theme_color": "#d6352b",
+  "lang": "ms",
+  "icons": [
+    {"src": "icons/pdf-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/pdf-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icons/pdf-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ],
+  "share_target": {
+    "action": "./pdf.html?share=1",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {"files": [{"name": "files", "accept": ["application/pdf", "image/*"]}]}
+  }
+}

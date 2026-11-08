@@ -130,8 +130,9 @@ function updEst(){
 }
 $('target').onchange=updEst;$('res').onchange=updEst;
 
-$('file').onchange=e=>{
-  const f=e.target.files[0];if(!f)return;
+$('file').onchange=e=>pick(e.target.files[0]);
+function pick(f){
+  if(!f)return;
   file=f;if(srcURL)URL.revokeObjectURL(srcURL);srcURL=URL.createObjectURL(f);
   $('pickTxt').textContent=f.name.length>34?f.name.slice(0,31)+'…':f.name;
   $('mSize').textContent=fmtMB(f.size);
@@ -149,7 +150,7 @@ $('file').onchange=e=>{
   probe.onerror=()=>{$('srcNote').className='note bad';$('srcNote').textContent='Format video ni browser tak boleh baca.'};
   probe.src=srcURL;
   $('outCard').hidden=true;
-};
+}
 
 async function run(){
   const mime=pickMime();
@@ -257,6 +258,21 @@ $('save').onclick=async()=>{
     else{n.className='note bad';n.textContent='Save gagal ('+(c||'error')+').'}
   }
 };
+
+// Android app: install, offline, and videos from the phone's Share menu (hosted site only)
+if(/(^|\.)github\.io$|^localhost$|^127\.0\.0\.1$/.test(location.hostname)){
+  for(const [rel,href] of [['manifest','video.webmanifest'],['apple-touch-icon','icons/video-192.png']]){const l=document.createElement('link');l.rel=rel;l.href=href;document.head.append(l)}
+  navigator.serviceWorker?.register('sw.js').catch(()=>{});
+  if(new URLSearchParams(location.search).has('shared')){
+    history.replaceState(null,'',location.pathname);
+    const o=indexedDB.open('rakfail',1);
+    o.onupgradeneeded=()=>o.result.createObjectStore('kv');
+    o.onsuccess=()=>{
+      const st=o.result.transaction('kv','readwrite').objectStore('kv'),r=st.get('shared');
+      r.onsuccess=()=>{st.delete('shared');const f=r.result&&r.result.files.find(x=>/^video\//.test(x.type)||/\.(mp4|mov|mkv|webm|3gp|m4v)$/i.test(x.name));if(f)pick(f)};
+    };
+  }
+}
 </script>
 
 </body></html>

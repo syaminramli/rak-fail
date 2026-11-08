@@ -1,0 +1,28 @@
+{
+  "id": "/rak-fail/",
+  "name": "Rak Fail",
+  "short_name": "Rak Fail",
+  "description": "Buka hard disk luaran: gambar, video, PDF tersusun ikut jenis.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#101216",
+  "theme_color": "#2f55d4",
+  "lang": "ms",
+  "icons": [
+    {"src": "icons/rak-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/rak-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icons/rak-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ],
+  "shortcuts": [
+    {"name": "PDF Toolkit", "url": "./pdf.html", "icons": [{"src": "icons/pdf-192.png", "sizes": "192x192"}]},
+    {"name": "WA Video Compressor", "url": "./video.html", "icons": [{"src": "icons/video-192.png", "sizes": "192x192"}]}
+  ],
+  "share_target": {
+    "action": "./?share=1",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {"files": [{"name": "files", "accept": ["image/*", "video/*", "audio/*", "application/pdf", "*/*"]}]}
+  }
+}

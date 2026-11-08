@@ -1,0 +1,23 @@
+{
+  "id": "/rak-fail/video.html",
+  "name": "WA Video Compressor",
+  "short_name": "WA Video",
+  "description": "Kecilkan video bawah 32 MB untuk WhatsApp.",
+  "start_url": "./video.html",
+  "scope": "./video.html",
+  "display": "standalone",
+  "background_color": "#0e1411",
+  "theme_color": "#0f8a5f",
+  "lang": "ms",
+  "icons": [
+    {"src": "icons/video-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/video-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icons/video-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ],
+  "share_target": {
+    "action": "./video.html?share=1",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {"files": [{"name": "files", "accept": ["video/*"]}]}
+  }
+}

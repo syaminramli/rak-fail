@@ -1257,6 +1257,7 @@ function showTool(k){
   Ed.reset(); Org.items = [];
   setStatus(''); drawFiles(); $('#outBtns').hidden = true; outbox = null;
   t.onShow && t.onShow();
+  if (pendingShared){ const p = pendingShared; pendingShared = null; addFiles(p); }
   window.scrollTo(0,0);
 }
 function setLang(l){
@@ -1397,6 +1398,25 @@ function kv(op, key, val){
     addFiles(h.files);
   } catch {}
 })();
+
+// Android app: install, offline, and files from the phone's Share menu (hosted site only).
+// Shared files wait in pendingShared until a tool is picked (var: showTool can run before this line).
+var pendingShared = null;
+if (/(^|\.)github\.io$|^localhost$|^127\.0\.0\.1$/.test(location.hostname)){
+  const l = document.createElement('link'); l.rel = 'manifest'; l.href = 'pdf.webmanifest'; document.head.append(l);
+  navigator.serviceWorker?.register('sw.js').catch(() => {});
+  if (new URLSearchParams(location.search).has('shared')) (async () => {
+    history.replaceState(null, '', location.pathname + location.hash);
+    try {
+      const s = await kv('get', 'shared'); await kv('del', 'shared');
+      if (!s || !s.files.length) return;
+      if (current) return addFiles(s.files);
+      pendingShared = s.files;
+      if (LANG !== 'ms') setLang('ms');
+      $('#viewHome .intro p').textContent = `Fail diterima: ${s.files.map(f => f.name).join(', ')}. Pilih tool di bawah.`;
+    } catch {}
+  })();
+}
 </script>
 
 </body></html>

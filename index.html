@@ -158,6 +158,7 @@ input[type=file]{display:none}
       <input class="search" id="q" type="search" placeholder="Cari nama fail…" aria-label="Cari nama fail">
       <button class="icb" id="selBtn" aria-pressed="false">Pilih</button>
       <button class="icb" id="addBtn" title="Tambah folder lain">+ Folder</button>
+      <button class="icb install" hidden>Pasang app</button>
     </div>
     <div class="meter" id="meter" aria-hidden="true"></div>
     <nav class="tabs" id="tabs" role="tablist"></nav>
@@ -177,6 +178,7 @@ input[type=file]{display:none}
       <button class="btn" id="openDir">Buka folder</button>
       <button class="btn ghost" id="openFiles">Pilih fail</button>
     </div>
+    <button class="btn ghost install" hidden>Pasang sebagai app di telefon</button>
     <p class="note" id="startNote">Kalau "Buka folder" cuma bagi pilih fail, guna Chrome dan pilih banyak fail sekali gus.</p>
   </section>
   <div id="list" hidden></div>
@@ -887,5 +889,32 @@ function imagesSheet(files, title){
       await save(await z.generateAsync({type:'blob'}), name); msg('Disimpan: '+name, 'ok'); }
     catch (e){ msg(e && e.code === 'declined' ? 'Simpanan dibatalkan.' : 'Tak dapat simpan: '+(e.message||e.code), 'bad'); }
   };
+}
+
+/* ---------- Android app: install, offline, and files from the phone's Share menu (hosted site only) ---------- */
+if (ON_SITE){
+  for (const [rel, href] of [['manifest', 'rak.webmanifest'], ['apple-touch-icon', 'icons/rak-192.png']]){
+    const l = document.createElement('link'); l.rel = rel; l.href = href; document.head.append(l);
+  }
+  const tc = document.createElement('meta'); tc.name = 'theme-color'; tc.content = '#2f55d4'; document.head.append(tc);
+  navigator.serviceWorker?.register('sw.js').catch(() => {});
+  let installEvt = null;
+  addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; document.querySelectorAll('.install').forEach(b => b.hidden = false); });
+  document.querySelectorAll('.install').forEach(b => b.onclick = async () => {
+    if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null;
+    document.querySelectorAll('.install').forEach(x => x.hidden = true);
+  });
+  if (new URLSearchParams(location.search).has('shared')) (async () => {
+    history.replaceState(null, '', location.pathname);
+    try {
+      const s = await kv('get', 'shared'); await kv('del', 'shared');
+      if (!s || !s.files.length) return;
+      for (const f of s.files) addFile(f, 'Dikongsi/'+f.name);
+      const first = items.find(i => i.f === s.files[0]);
+      if (first) tab = first.kind;
+      ingest([]);
+      if (s.files.length === 1 && first) openView(shown.indexOf(first));
+    } catch {}
+  })();
 }
 </script>
