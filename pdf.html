@@ -913,7 +913,11 @@ const Ed = {
     if (this.sel === it){ el.classList.add('sel'); el.append(this.toolbar(it)); }
   },
   refresh(it){ this.render(it); },
-  redrawAll(){ this.items.forEach(it => this.render(it)); },
+  redrawAll(){
+    const a = document.activeElement, keep = a && a.classList && a.classList.contains('txt') ? this.items.find(it => it.el && it.el.contains(a)) : null;
+    this.items.forEach(it => this.render(it));
+    if (keep) this.focusText(keep);
+  },
   select(it){
     if (this.sel && this.sel !== it){
       const old = this.sel; this.sel = null;
@@ -1374,7 +1378,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape'){ if (!$('#sigModal').hidden) Sig.close(); else if (Ed.arm){ Ed.arm = null; Ed.drawBar(); } else Ed.select(null); }
   if ((e.key === 'Delete' || e.key === 'Backspace') && Ed.sel && !(document.activeElement && (document.activeElement.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)))){ e.preventDefault(); Ed.remove(Ed.sel); }
 });
-let rzT; addEventListener('resize', () => { clearTimeout(rzT); rzT = setTimeout(() => { if (Ed.loaded) Ed.redrawAll(); }, 150); });
+/* Mobile keyboard changes only the viewport height — redraw only when the page width really changes, otherwise the focused text box gets rebuilt and the keyboard closes. */
+let rzT, rzW = innerWidth; addEventListener('resize', () => { clearTimeout(rzT); rzT = setTimeout(() => { if (innerWidth === rzW) return; rzW = innerWidth; if (Ed.loaded) Ed.redrawAll(); }, 150); });
 
 Sig.load(); applyStatic(); drawHome(); route();
 
