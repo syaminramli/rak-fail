@@ -44,7 +44,8 @@ self.addEventListener('fetch', e => {
   }
   // Our own pages: network first so updates show up, cache when offline
   if (url.origin === location.origin){
-    e.respondWith(fetch(req).then(res => {
+    // no-cache: always revalidate with GitHub Pages (its 10-min max-age otherwise hides new pushes)
+    e.respondWith(fetch(req, {cache: 'no-cache'}).then(res => {
       if (res.ok && !url.search){ const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
       return res;
     }).catch(() => caches.match(req, {ignoreSearch: true})));
