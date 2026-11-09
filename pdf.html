@@ -148,6 +148,7 @@ main{max-width:1140px;margin:0 auto;padding-block:28px 60px;padding-left:max(16p
 .tb button{background:none;border:0;color:#fff;width:32px;height:30px;border-radius:6px;cursor:pointer;font-size:15px;line-height:1}
 .tb button:hover{background:rgba(255,255,255,.15)}
 .tb .grip{cursor:move;touch-action:none}
+.tb select{background:#2c2c2e;color:#fff;border:0;border-radius:6px;height:30px;padding:0 4px;font:13px inherit;cursor:pointer}
 .it-stamp .tb{bottom:auto;left:0;transform:translateX(-50%)}
 /* signatures */
 .sigs{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:8px}
@@ -871,7 +872,7 @@ const Ed = {
     switch (this.arm){
       case 'stamp': { const size = Math.max(6, base*0.02); it = {type:'stamp', page:p, cx:x, cy:y, size, len:size*21, angle:-45, text:val('stext')||'FOR PRIVATE USE ONLY', color:val('scolor')||'#111111'}; break; }
       case 'sign': { const s = Sig.current(), w = base*0.28; it = {type:'sign', page:p, src:s.url, ar:s.ar, w, x:x - w/2, y:y - w*s.ar/2}; break; }
-      case 'text': case 'date': { const size = Math.min(40, Math.max(8, base*0.018)); it = {type:'text', page:p, x, y:y - size*0.6, size, color, text: this.arm==='date' ? today() : ''}; break; }
+      case 'text': case 'date': { const size = this.tsize || Math.min(40, Math.max(8, base*0.018)); it = {type:'text', page:p, x, y:y - size*0.6, size, color, text: this.arm==='date' ? today() : ''}; break; }
       case 'check': case 'cross': { const s = Math.max(8, base*0.022); it = {type:this.arm, page:p, x:x - s/2, y:y - s/2, s, color}; break; }
     }
     this.arm = null; this.drawBar();
@@ -943,6 +944,14 @@ const Ed = {
       b.addEventListener('click', e => { e.stopPropagation(); fn && fn(); }); tb.append(b); };
     if (it.type === 'text') B('✥', tr('Drag to move','Seret untuk alih'), null, 'grip');
     B('−', tr('Smaller','Kecilkan'), () => this.scale(it, 1/1.15));
+    if (it.type === 'text'){
+      const cur = Math.round(it.size), sizes = [...new Set([6,8,9,10,11,12,14,16,18,20,24,28,32,36,48,cur])].sort((a,b)=>a-b);
+      const sel = document.createElement('select'); sel.title = tr('Font size','Saiz huruf'); sel.setAttribute('aria-label', sel.title);
+      sel.innerHTML = sizes.map(n => `<option value="${n}" ${n===cur?'selected':''}>${n}pt</option>`).join('');
+      sel.addEventListener('pointerdown', e => e.stopPropagation());
+      sel.addEventListener('change', () => { it.size = this.tsize = +sel.value; this.render(it); });
+      tb.append(sel);
+    }
     B('+', tr('Bigger','Besarkan'), () => this.scale(it, 1.15));
     if (it.type === 'stamp'){
       B('↺', tr('Turn left','Pusing kiri'), () => { it.angle -= 15; this.render(it); });
@@ -951,7 +960,7 @@ const Ed = {
     B('✕', tr('Delete','Padam'), () => this.remove(it));
     const k = this.k(it.page), lw = this.pages[it.page].layer.clientWidth;
     if (it.type === 'stamp'){ tb.style.top = (it.size*1.2*k + 10) + 'px'; }
-    else { if (it.y*k < 46) tb.classList.add('below'); if (it.x*k > lw - 190) tb.classList.add('right'); }
+    else { if (it.y*k < 46) tb.classList.add('below'); if (it.x*k > lw - (it.type === 'text' ? 250 : 190)) tb.classList.add('right'); }
     return tb;
   },
   drag(e, it, fromGrip){
