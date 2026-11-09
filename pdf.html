@@ -138,7 +138,7 @@ main{max-width:1140px;margin:0 auto;padding-block:28px 60px;padding-left:max(16p
 .band{position:absolute;left:0;top:0;display:flex;align-items:center;justify-content:center;white-space:nowrap;border-style:solid;font-family:Helvetica,Arial,sans-serif;line-height:1;cursor:move}
 .it-stamp.sel .band{box-shadow:0 0 0 1.5px var(--accent)}
 .it-sign img{width:100%;height:100%;display:block;pointer-events:none}
-.txt{font-family:Helvetica,Arial,sans-serif;line-height:1.2;white-space:pre;outline:none;min-width:1ch;cursor:text}
+.txt{line-height:1.2;white-space:pre;outline:none;min-width:1ch;cursor:text}
 .txt:empty::before{content:attr(data-ph);color:#9a9aa2}
 .it-text.sel .txt{background:rgba(214,53,43,.07)}
 .it-check svg{width:100%;height:100%;display:block}
@@ -148,6 +148,7 @@ main{max-width:1140px;margin:0 auto;padding-block:28px 60px;padding-left:max(16p
 .tb button{background:none;border:0;color:#fff;width:32px;height:30px;border-radius:6px;cursor:pointer;font-size:15px;line-height:1}
 .tb button:hover{background:rgba(255,255,255,.15)}
 .tb .grip{cursor:move;touch-action:none}
+.tb input[type=color]{width:30px;height:30px;border:0;padding:2px;background:none;cursor:pointer}
 .tb select{background:#2c2c2e;color:#fff;border:0;border-radius:6px;height:30px;padding:0 4px;font:13px inherit;cursor:pointer}
 .it-stamp .tb{bottom:auto;left:0;transform:translateX(-50%)}
 /* signatures */
@@ -816,6 +817,7 @@ const Nup = {
 };
 
 /* ================= PAGE EDITOR (palang / sign / fill) ================= */
+const TFONTS = {Helvetica:['Sans','Helvetica,Arial,sans-serif',400], HelveticaBold:['Bold','Helvetica,Arial,sans-serif',700], TimesRoman:['Serif','"Times New Roman",Times,serif',400], Courier:['Mono','"Courier New",Courier,monospace',400]};
 const Ed = {
   pages:[], items:[], sel:null, arm:null, bytes:null, name:'', fields:[], formVals:{}, loaded:false,
   reset(){ this.items = []; this.sel = null; this.arm = null; this.loaded = false; this.fields = []; this.formVals = {}; $('#edPages').innerHTML = ''; $('#edWrap').hidden = true; },
@@ -854,7 +856,7 @@ const Ed = {
     bar.innerHTML = t.bar().map(([k,l])=> k==='@all'
         ? `<button type="button" class="btn" data-act="allpages">${l}</button>`
         : `<button type="button" class="btn ${this.arm===k?'armed':''}" data-act="arm" data-k="${k}">${l}</button>`).join('')
-      + `<span class="sp"></span><button type="button" class="btn primary" data-act="save">${t.btn()}</button>`
+      + `<span class="sp"></span><button type="button" class="btn primary" data-act="${canShareFiles?'share':'save'}">${canShareFiles ? tr('Share…','Share…') : t.btn()}</button>`
       + (this.arm ? `<div class="armnote">${tr('Tap on the page where you want to place it.','Ketik pada halaman di tempat yang anda mahu.')} <button type="button" data-act="disarm">${tr('Cancel','Batal')}</button></div>` : '');
     this.pages.forEach(p => p.layer.classList.toggle('arm', !!this.arm));
   },
@@ -872,7 +874,7 @@ const Ed = {
     switch (this.arm){
       case 'stamp': { const size = Math.max(6, base*0.02); it = {type:'stamp', page:p, cx:x, cy:y, size, len:size*21, angle:-45, text:val('stext')||'FOR PRIVATE USE ONLY', color:val('scolor')||'#111111'}; break; }
       case 'sign': { const s = Sig.current(), w = base*0.28; it = {type:'sign', page:p, src:s.url, ar:s.ar, w, x:x - w/2, y:y - w*s.ar/2}; break; }
-      case 'text': case 'date': { const size = this.tsize || Math.min(40, Math.max(8, base*0.018)); it = {type:'text', page:p, x, y:y - size*0.6, size, color, text: this.arm==='date' ? today() : ''}; break; }
+      case 'text': case 'date': { const size = this.tsize || Math.min(40, Math.max(8, base*0.018)); it = {type:'text', page:p, x, y:y - size*0.6, size, color, font:this.tfont||'Helvetica', text: this.arm==='date' ? today() : ''}; break; }
       case 'check': case 'cross': { const s = Math.max(8, base*0.022); it = {type:this.arm, page:p, x:x - s/2, y:y - s/2, s, color}; break; }
     }
     this.arm = null; this.drawBar();
@@ -899,7 +901,7 @@ const Ed = {
       Object.assign(el.style, {left:it.x*k+'px', top:it.y*k+'px'});
       const t = document.createElement('div'); t.className = 'txt'; t.contentEditable = 'true'; t.spellcheck = false;
       t.dataset.ph = tr('Type here','Taip di sini');
-      Object.assign(t.style, {fontSize:it.size*k+'px', color:it.color});
+      const F = TFONTS[it.font] || TFONTS.Helvetica; Object.assign(t.style, {fontSize:it.size*k+'px', color:it.color, fontFamily:F[1], fontWeight:F[2]});
       t.textContent = it.text;
       t.addEventListener('input', () => { it.text = t.innerText.replace(/\n$/,''); });
       t.addEventListener('pointerdown', e => { if (this.sel !== it) this.drag(e, it); else e.stopPropagation(); });
@@ -951,6 +953,14 @@ const Ed = {
       sel.addEventListener('pointerdown', e => e.stopPropagation());
       sel.addEventListener('change', () => { it.size = this.tsize = +sel.value; this.render(it); });
       tb.append(sel);
+      const fs = document.createElement('select'); fs.title = tr('Font','Font'); fs.setAttribute('aria-label', fs.title);
+      fs.innerHTML = Object.entries(TFONTS).map(([key,[l]]) => `<option value="${key}" ${key===(it.font||'Helvetica')?'selected':''}>${l}</option>`).join('');
+      fs.addEventListener('pointerdown', e => e.stopPropagation());
+      fs.addEventListener('change', () => { it.font = this.tfont = fs.value; this.render(it); });
+      const cl = document.createElement('input'); cl.type = 'color'; cl.value = it.color; cl.title = tr('Colour','Warna'); cl.setAttribute('aria-label', cl.title);
+      cl.addEventListener('pointerdown', e => e.stopPropagation());
+      cl.addEventListener('input', () => { it.color = cl.value; const t = it.el.querySelector('.txt'); if (t) t.style.color = cl.value; const o = $('#opts [name=tcolor]'); if (o) o.value = cl.value; });
+      tb.append(fs, cl);
     }
     B('+', tr('Bigger','Besarkan'), () => this.scale(it, 1.15));
     if (it.type === 'stamp'){
@@ -960,7 +970,7 @@ const Ed = {
     B('✕', tr('Delete','Padam'), () => this.remove(it));
     const k = this.k(it.page), lw = this.pages[it.page].layer.clientWidth;
     if (it.type === 'stamp'){ tb.style.top = (it.size*1.2*k + 10) + 'px'; }
-    else { if (it.y*k < 46) tb.classList.add('below'); if (it.x*k > lw - (it.type === 'text' ? 250 : 190)) tb.classList.add('right'); }
+    else { if (it.y*k < 46) tb.classList.add('below'); if (it.x*k > lw - (it.type === 'text' ? 330 : 190)) tb.classList.add('right'); }
     return tb;
   },
   drag(e, it, fromGrip){
@@ -1028,7 +1038,7 @@ const Ed = {
       }
       if (val('flatten')) try { form.flatten(); } catch {}
     }
-    const font = await doc.embedFont(StandardFonts.Helvetica), imgs = new Map();
+    const fonts = new Map(), imgs = new Map(), fontOf = async k => { k = TFONTS[k] ? k : 'Helvetica'; if (!fonts.has(k)) fonts.set(k, await doc.embedFont(StandardFonts[k])); return fonts.get(k); };
     for (const it of this.items){
       const pg = doc.getPage(it.page), vp = this.pages[it.page].vp1, R = vp.rotation % 360;
       const P = (x, y) => { const [a, b] = vp.convertToPdfPoint(x, y); return {x:a, y:b}; };
@@ -1037,7 +1047,7 @@ const Ed = {
         const h = it.w*it.ar;
         pg.drawImage(imgs.get(it.src), {...P(it.x, it.y + h), width:it.w, height:h, rotate:degrees(R)});
       } else if (it.type === 'text'){
-        const lines = it.text.split('\n');
+        const lines = it.text.split('\n'), font = await fontOf(it.font);
         lines.forEach((ln, i) => {
           if (!ln) return;
           try { pg.drawText(ln, {...P(it.x, it.y + it.size*(0.93 + 1.2*i)), size:it.size, font, color:hexRgb(it.color), rotate:degrees(R)}); }
@@ -1048,7 +1058,7 @@ const Ed = {
         pts.forEach(([a, b]) => pg.drawLine({start:P(it.x+a[0]*it.s, it.y+a[1]*it.s), end:P(it.x+b[0]*it.s, it.y+b[1]*it.s), thickness:it.s*.12, color:hexRgb(it.color), lineCap:1}));
       } else if (it.type === 'stamp'){
         const th = it.angle*Math.PI/180, u = [Math.cos(th), Math.sin(th)], n = [-Math.sin(th), Math.cos(th)];
-        const hb = it.size*0.95 - it.size*0.04, half = it.len/2, col = hexRgb(it.color);
+        const hb = it.size*0.95 - it.size*0.04, half = it.len/2, col = hexRgb(it.color), font = await fontOf('Helvetica');
         for (const sgn of [-1, 1]){
           const ox = it.cx + n[0]*hb*sgn, oy = it.cy + n[1]*hb*sgn;
           pg.drawLine({start:P(ox - u[0]*half, oy - u[1]*half), end:P(ox + u[0]*half, oy + u[1]*half), thickness:it.size*.08, color:col});
@@ -1378,6 +1388,7 @@ document.addEventListener('click', e => {
   if (a === 'arm') Ed.setArm(b.dataset.k);
   else if (a === 'disarm'){ Ed.arm = null; Ed.drawBar(); }
   else if (a === 'save') runTool();
+  else if (a === 'share') runTool().then(() => outbox && outbox.length && navigator.share({files:outbox}).catch(e => { if (e.name !== 'AbortError') $('#outBtns').scrollIntoView({behavior:'smooth', block:'center'}); }));
   else if (a === 'allpages') Ed.copyToAll();
   else if (a === 'newsig') Sig.open(() => { Ed.arm = 'sign'; Ed.drawBar(); });
   else if (a === 'orgreset') Org.reset();
