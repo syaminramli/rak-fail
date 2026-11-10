@@ -104,6 +104,23 @@ main{max-width:1140px;margin:0 auto;padding-block:28px 60px;padding-left:max(16p
 .pg img{max-width:100%;max-height:130px;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .2s;background:#fff}
 .pg .n{font-size:12px;color:var(--muted);margin-top:4px}
 .pg .act{display:flex;justify-content:center;gap:4px;margin-top:4px;flex-wrap:wrap}
+/* scanner */
+.camrow{margin-bottom:10px}
+.scanlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:14px}
+.scard{border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--bg)}
+.scard.edit{grid-column:1/-1}
+.sview{position:relative;display:grid;place-items:center;min-height:120px}
+.sview img{max-width:100%;max-height:220px;display:block;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.scard.edit .sview{display:block;min-height:0}
+.scard.edit .sview img{width:100%;max-height:none}
+.sview svg{position:absolute;inset:0;width:100%;height:100%;touch-action:none;overflow:visible;cursor:crosshair}
+.sbar{display:flex;gap:4px;align-items:center;margin-top:6px;flex-wrap:wrap}
+.sbar .badge{font-size:11px;font-weight:700;color:var(--accent);margin-right:auto;white-space:nowrap}
+.sbar .btn{padding:6px 10px;font-size:13px}
+.scard .sbar{justify-content:space-between;gap:2px}
+.scard .sbar .ib{flex:1;width:auto;min-width:0;height:30px;padding:0}
+.scard.edit .sbar{justify-content:flex-start;gap:4px}
+.sview .badge{position:absolute;top:6px;left:6px;background:var(--accent);color:#fff;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700}
 /* print layout preview */
 .sheets{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:18px;margin-top:16px}
 .sheet{text-align:center}
@@ -216,13 +233,16 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:20px}
     <div class="intro"><h2 id="tTitle"></h2><p id="tDesc"></p></div>
     <div class="tool">
       <div class="panel work">
+        <div class="camrow" id="camRow" hidden><button type="button" class="go" id="camBtn"></button></div>
         <div class="drop" id="drop" tabindex="0" role="button">
           <strong id="dropTitle"></strong>
           <span id="dropHint"></span>
         </div>
         <input type="file" id="picker" hidden>
+        <input type="file" id="cam" accept="image/*" capture="environment" hidden>
         <ul class="files" id="files"></ul>
         <div class="pages" id="pages" hidden></div>
+        <div class="scanlist" id="scanList" hidden></div>
         <div id="preview" hidden></div>
         <div id="edWrap" hidden>
           <div class="edbar" id="edBar"></div>
@@ -295,6 +315,7 @@ const fill = (s, o) => s.replace(/\{(\w+)\}/g, (_, k) => o[k]);
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ICON = {
+  scan:'<path d="M3 7V4a1 1 0 0 1 1-1h3M17 3h3a1 1 0 0 1 1 1v3M21 17v3a1 1 0 0 1-1 1h-3M7 21H4a1 1 0 0 1-1-1v-3M7 12h10"/>',
   merge:'<path d="M4 4h7v7H4zM13 13h7v7h-7zM11 7.5h4.5V11M13 16.5H8.5V13"/>',
   split:'<path d="M6 3v6l6 3 6-3V3M12 12v9M8 21h8"/>',
   organize:'<path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/>',
@@ -421,6 +442,21 @@ const val = name => { const r = document.querySelector(`#opts [name="${name}"]:c
 
 /* ================= TOOLS ================= */
 const TOOLS = {
+  /* ---- Scan document (CamScanner-style) ---- */
+  scan:{
+    sec:'scan', isNew:true, accept:'img', multiple:true, camera:true, share:true,
+    title:()=>tr('Scan Document','Scan Dokumen'),
+    desc:()=>tr('Snap a document — edges are found, straightened and cleaned, like CamScanner.','Snap dokumen — bucu dikesan, diluruskan dan dibersihkan, macam CamScanner.'),
+    btn:()=> canShareFiles ? tr('Share…','Share…') : tr('Save','Simpan'),
+    opts:()=> field(tr('Filter','Filter'), seg('sfilter',[['clean',tr('Clean','Bersih')],['bw',tr('B&W','Hitam putih')],['gray',tr('Grey','Kelabu')],['orig',tr('Original','Asal')]],'clean'))
+      + field(tr('Page size','Saiz halaman'), seg('spage',[['auto',tr('As detected','Ikut dikesan')],['a4','A4']],'auto'))
+      + field(tr('Save as','Simpan sebagai'), seg('sfmt',[['pdf','PDF'],['jpg','JPG']],'pdf')),
+    onShow(){ Scan.draw(); loadCv().catch(()=>{}); },
+    onFiles(){ const list = files; files = []; drawFiles(); Scan.add(list); },
+    onOptInput(n){ if (n === 'sfilter') Scan.refreshAll(); },
+    ready:()=> Scan.items.some(it => it.url) && !Scan.items.some(it => it.busy),
+    async run(_, prog){ return Scan.export(prog); }
+  },
   /* ---- Print layout (N-up) ---- */
   nup:{
     sec:'print', isNew:true, accept:'both', multiple:true, min:1,
@@ -745,7 +781,7 @@ const TOOLS = {
     }
   },
 };
-const SECTIONS = [['edit',()=>tr('Edit & sign','Edit & tandatangan')],['print',()=>tr('Print & organize','Cetak & susun')],['convert',()=>tr('Convert & more','Tukar & lain-lain')]];
+const SECTIONS = [['scan',()=>tr('Scan','Scan')],['edit',()=>tr('Edit & sign','Edit & tandatangan')],['print',()=>tr('Print & organize','Cetak & susun')],['convert',()=>tr('Convert & more','Tukar & lain-lain')]];
 
 /* ================= PRINT LAYOUT ================= */
 const PAPER = {a4:[595.28,841.89], letter:[612,792], a5:[419.53,595.28]};
@@ -1231,6 +1267,208 @@ const Org = {
   }
 };
 
+/* ================= SCANNER (CamScanner-style) ================= */
+// shortcut: OpenCV.js is ~10MB — loaded only when Scan opens, then the service worker keeps it offline.
+const CV_URL = 'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js';
+let cvP = null;
+function loadCv(){
+  if (!cvP) cvP = new Promise((ok, no) => {
+    const fail = () => { cvP = null; no(new Error(tr('Could not load the scan engine. Check your internet and try again.','Tak dapat muat enjin scan. Semak internet dan cuba lagi.'))); };
+    const s = document.createElement('script'); s.src = CV_URL; s.async = true; s.onerror = fail;
+    s.onload = () => { const t0 = Date.now(); (function wait(){
+      const c = window.cv;
+      // the module has its own .then(); resolving a Promise with it loops forever, so drop it
+      if (c && c.Mat){ delete c.then; return ok(c); }
+      if (c instanceof Promise) return c.then(m => { delete m.then; window.cv = m; ok(m); }, fail);
+      if (Date.now() - t0 > 90000) return fail();
+      setTimeout(wait, 100);
+    })(); };
+    document.head.append(s);
+  });
+  return cvP;
+}
+const PAPERS = [['A4', 595.28, 841.89], ['Letter', 612, 792], ['IC / Card', 153.07, 242.65]];
+const odd = n => Math.max(3, Math.round(n) | 1);
+// corners -> [top-left, top-right, bottom-right, bottom-left]
+const orderQuad = p => { const s = p.map(([x,y]) => x+y), d = p.map(([x,y]) => y-x);
+  return [p[s.indexOf(Math.min(...s))], p[d.indexOf(Math.min(...d))], p[s.indexOf(Math.max(...s))], p[d.indexOf(Math.max(...d))]]; };
+async function decodeImg(file, max){
+  const bmp = await createImageBitmap(file, {imageOrientation:'from-image'}).catch(() => createImageBitmap(file));
+  const s = Math.min(1, max/Math.max(bmp.width, bmp.height)), c = document.createElement('canvas');
+  c.width = Math.round(bmp.width*s); c.height = Math.round(bmp.height*s);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); bmp.close && bmp.close();
+  return c;
+}
+const Scan = {
+  items:[], tok:0,
+  async add(list){
+    const cvLoaded = cvP && window.cv && window.cv.Mat;
+    if (!cvLoaded) setStatus(tr('Loading scan engine (first time only)…','Memuatkan enjin scan (kali pertama sahaja)…'));
+    for (const file of list){
+      const it = {file, quad:null, rot:0, edit:false, busy:true};
+      this.items.push(it); this.draw(); updateGo();
+      try {
+        it.prev = await decodeImg(file, 1200); it.prevUrl = it.prev.toDataURL('image/jpeg', .8); this.draw();
+        const cv = await loadCv(); setStatus('');
+        it.quad = this.detect(cv, it.prev) || [[0,0],[1,0],[1,1],[0,1]];
+        await this.update(it);
+      } catch(e){ console.error(e); setStatus(e.message || String(e), 'err'); if (!it.prev) this.items = this.items.filter(x => x !== it); }
+      it.busy = false; this.draw(); updateGo();
+    }
+  },
+  // Largest 4-corner shape in the photo, as fractions of width/height (null = not found)
+  detect(cv, c){
+    const s = Math.min(1, 500/Math.max(c.width, c.height)), t = document.createElement('canvas');
+    t.width = Math.round(c.width*s); t.height = Math.round(c.height*s); t.getContext('2d').drawImage(c, 0, 0, t.width, t.height);
+    const W = t.width, H = t.height, mats = [], M = m => (mats.push(m), m);
+    let best = null, bestA = W*H*0.12;
+    try {
+      const g = M(new cv.Mat()), edges = M(new cv.Mat()), otsu = M(new cv.Mat());
+      cv.cvtColor(M(cv.imread(t)), g, cv.COLOR_RGBA2GRAY);
+      cv.morphologyEx(g, g, cv.MORPH_CLOSE, M(cv.Mat.ones(9, 9, cv.CV_8U)));   // wipe out the text, keep the paper
+      cv.GaussianBlur(g, g, new cv.Size(5, 5), 0);
+      cv.Canny(g, edges, 30, 100); cv.dilate(edges, edges, M(cv.Mat.ones(3, 3, cv.CV_8U)));
+      cv.threshold(g, otsu, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+      for (const m of [edges, otsu]){
+        const cs = M(new cv.MatVector()); cv.findContours(m, cs, M(new cv.Mat()), cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+        for (let i = 0; i < cs.size(); i++){
+          const hull = M(new cv.Mat()); cv.convexHull(M(cs.get(i)), hull);
+          const a = cv.contourArea(hull); if (a <= bestA) continue;
+          for (const eps of [.02, .04, .06]){
+            const ap = M(new cv.Mat()); cv.approxPolyDP(hull, ap, eps*cv.arcLength(hull, true), true);
+            if (ap.rows === 4){ bestA = a; best = [0,1,2,3].map(j => [ap.data32S[j*2], ap.data32S[j*2+1]]); break; }
+          }
+        }
+      }
+    } finally { mats.forEach(m => m.delete()); }
+    if (!best) return null;
+    const cx = best.reduce((a, p) => a + p[0], 0)/4, cy = best.reduce((a, p) => a + p[1], 0)/4;
+    return orderQuad(best).map(([x,y]) => [(x + (cx-x)*.01)/W, (y + (cy-y)*.01)/H]);   // 1% inward so no table edge sneaks in
+  },
+  // Real width/height of the paper. Zhang & He, "Whiteboard scanning and image enhancement" — undoes the camera's perspective.
+  ratio(it){
+    const W = it.prev.width, H = it.prev.height, [tl,tr,br,bl] = it.quad.map(([x,y]) => [x*W, y*H, 1]);
+    const d = (a,b) => Math.hypot(a[0]-b[0], a[1]-b[1]), naive = (d(tl,tr)+d(bl,br)) / (d(tl,bl)+d(tr,br));
+    const X = (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]], D = (a,b) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+    const k2 = D(X(tl,br),bl)/D(X(tr,br),bl), k3 = D(X(tl,br),tr)/D(X(bl,br),tr);
+    const n2 = tr.map((v,i) => k2*v - tl[i]), n3 = bl.map((v,i) => k3*v - tl[i]), u = W/2, v = H/2;
+    const f2 = -((n2[0]-u*n2[2])*(n3[0]-u*n3[2]) + (n2[1]-v*n2[2])*(n3[1]-v*n3[2])) / (n2[2]*n3[2]);
+    const L = n => Math.hypot((n[0]-u*n[2])/Math.sqrt(f2), (n[1]-v*n[2])/Math.sqrt(f2), n[2]);
+    const r = L(n2)/L(n3);
+    return f2 > 0 && isFinite(r) && r > naive/1.5 && r < naive*1.5 ? r : naive;   // nearly flat-on photos fall back to side lengths
+  },
+  paperOf(it){ const r = this.ratio(it), R = Math.max(r, 1/r); return PAPERS.find(([, w, h]) => Math.abs(R - h/w) / (h/w) < .04) || null; },
+  // Clean-up filters: divide out the shadow/lighting (background estimate), then contrast
+  filter(cv, m, mode, M){
+    if (mode === 'orig') return m;
+    const L = Math.max(m.cols, m.rows), col = M(new cv.Mat()), planes = M(new cv.MatVector()), outV = M(new cv.MatVector());
+    cv.cvtColor(m, col, mode === 'clean' ? cv.COLOR_RGBA2RGB : cv.COLOR_RGBA2GRAY); cv.split(col, planes);
+    const sm = new cv.Size(Math.round(m.cols/4), Math.round(m.rows/4)), k = M(cv.Mat.ones(5, 5, cv.CV_8U));
+    for (let i = 0; i < planes.size(); i++){
+      const p = M(planes.get(i)), bg = M(new cv.Mat()), diff = M(new cv.Mat());
+      cv.resize(p, bg, sm, 0, 0, cv.INTER_AREA); cv.dilate(bg, bg, k); cv.medianBlur(bg, bg, odd(L/4/25));
+      cv.resize(bg, bg, new cv.Size(m.cols, m.rows), 0, 0, cv.INTER_LINEAR);
+      cv.absdiff(p, bg, diff); cv.bitwise_not(diff, diff); cv.normalize(diff, diff, 0, 255, cv.NORM_MINMAX);
+      diff.convertTo(diff, -1, 1.25, -60);
+      outV.push_back(diff);
+    }
+    const res = M(new cv.Mat()); cv.merge(outV, res);
+    if (mode !== 'bw') return res;
+    const b = M(new cv.Mat()); cv.adaptiveThreshold(res, b, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, odd(L/50), 12);
+    return b;
+  },
+  async render(it, max){
+    const cv = await loadCv(), src = max <= 1200 ? it.prev : await decodeImg(it.file, max), W = src.width, H = src.height;
+    const q = it.quad.map(([x,y]) => [x*W, y*H]), d = (a,b) => Math.hypot(a[0]-b[0], a[1]-b[1]), r = this.ratio(it);
+    let w = (d(q[0],q[1]) + d(q[3],q[2]))/2, h = w/r;
+    const s = Math.min(1, max/Math.max(w, h)); w = Math.max(1, Math.round(w*s)); h = Math.max(1, Math.round(h*s));
+    const mats = [], M = m => (mats.push(m), m);
+    try {
+      const warped = M(new cv.Mat());
+      const T = M(cv.getPerspectiveTransform(M(cv.matFromArray(4, 1, cv.CV_32FC2, q.flat())), M(cv.matFromArray(4, 1, cv.CV_32FC2, [0,0, w,0, w,h, 0,h]))));
+      cv.warpPerspective(M(cv.imread(src)), warped, T, new cv.Size(w, h), cv.INTER_LINEAR, cv.BORDER_REPLICATE);
+      let res = this.filter(cv, warped, val('sfilter') || 'clean', M);
+      if (it.rot){ const o = M(new cv.Mat()); cv.rotate(res, o, {90:cv.ROTATE_90_CLOCKWISE, 180:cv.ROTATE_180, 270:cv.ROTATE_90_COUNTERCLOCKWISE}[it.rot]); res = o; }
+      const c = document.createElement('canvas'); cv.imshow(c, res); return c;
+    } finally { mats.forEach(m => m.delete()); }
+  },
+  async update(it){ const c = await this.render(it, 1000); it.url = c.toDataURL('image/jpeg', .85); it.paper = this.paperOf(it); },
+  async refreshAll(){
+    const tok = ++this.tok;
+    for (const it of this.items){ if (tok !== this.tok) return; if (!it.quad || it.edit) continue; it.busy = true; this.draw(); updateGo(); await this.update(it); it.busy = false; }
+    this.draw(); updateGo();
+  },
+  async redo(it){ it.busy = true; this.draw(); updateGo(); try { await this.update(it); } catch(e){ setStatus(e.message,'err'); } it.busy = false; this.draw(); updateGo(); },
+  draw(){
+    const box = $('#scanList'); if (!box) return;
+    box.hidden = !this.items.length; box.innerHTML = '';
+    this.items.forEach((it, i) => {
+      const d = document.createElement('div'); d.className = 'scard' + (it.edit ? ' edit' : '');
+      const view = document.createElement('div'); view.className = 'sview';
+      const bar = document.createElement('div'); bar.className = 'sbar';
+      const B = (label, title, fn, cls='ib') => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = label; b.title = title; b.setAttribute('aria-label', title); b.onclick = fn; bar.append(b); return b; };
+      const badge = document.createElement('span'); badge.className = 'badge'; bar.append(badge);
+      if (it.edit){
+        badge.textContent = tr('Drag the corners','Seret bucu');
+        view.innerHTML = `<img src="${it.prevUrl}" alt="">`;
+        view.append(this.cropper(it));
+        B(tr('Whole photo','Seluruh gambar'), tr('Whole photo','Seluruh gambar'), () => { it.quad = [[0,0],[1,0],[1,1],[0,1]]; this.draw(); }, 'btn');
+        B(tr('✓ Done','✓ Siap'), tr('Done','Siap'), () => { const W = it.prev.width, H = it.prev.height; it.quad = orderQuad(it.quad.map(([x,y]) => [x*W, y*H])).map(([x,y]) => [x/W, y/H]); it.edit = false; this.redo(it); }, 'btn primary');
+      } else {
+        view.innerHTML = it.busy && !it.url ? `<p class="empty">${tr('Working…','Memproses…')}</p>` : `<img src="${it.url || it.prevUrl}" alt="" style="${it.busy ? 'opacity:.5' : ''}">`;
+        badge.textContent = `${i+1}${it.paper ? ' · ' + it.paper[0] : ''}`; view.append(badge);
+        const dis = it.busy || !it.quad;
+        B('✂', tr('Adjust corners','Laras bucu'), () => { this.items.forEach(x => x.edit = false); it.edit = true; this.draw(); }).disabled = dis;
+        B('↻', tr('Rotate','Putar'), () => { it.rot = (it.rot + 90) % 360; this.redo(it); }).disabled = dis;
+        B('←', tr('Move left','Ke kiri'), () => { [this.items[i-1], this.items[i]] = [this.items[i], this.items[i-1]]; this.draw(); }).disabled = i === 0;
+        B('→', tr('Move right','Ke kanan'), () => { [this.items[i+1], this.items[i]] = [this.items[i], this.items[i+1]]; this.draw(); }).disabled = i === this.items.length - 1;
+        B('✕', tr('Delete','Padam'), () => { this.items.splice(i, 1); this.draw(); updateGo(); });
+      }
+      d.append(view, bar); box.append(d);
+    });
+  },
+  // shortcut: no magnifier while dragging a corner; add one if fine adjustments prove fiddly on small phones.
+  cropper(it){
+    const W = it.prev.width, H = it.prev.height, ns = 'http://www.w3.org/2000/svg', R = Math.max(W, H)*.025;
+    const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('preserveAspectRatio', 'none');
+    svg.innerHTML = `<polygon fill="rgba(214,53,43,.15)" stroke="#d6352b" stroke-width="2" vector-effect="non-scaling-stroke"/>` + '<circle fill="#fff" stroke="#d6352b" stroke-width="3" vector-effect="non-scaling-stroke"/>'.repeat(4);
+    const poly = svg.querySelector('polygon'), dots = svg.querySelectorAll('circle');
+    const paint = () => { poly.setAttribute('points', it.quad.map(([x,y]) => `${x*W},${y*H}`).join(' ')); it.quad.forEach(([x,y], j) => { dots[j].setAttribute('cx', x*W); dots[j].setAttribute('cy', y*H); dots[j].setAttribute('r', R); }); };
+    paint();
+    svg.addEventListener('pointerdown', e => {
+      const r = svg.getBoundingClientRect(), P = ev => [Math.min(1, Math.max(0, (ev.clientX - r.left)/r.width)), Math.min(1, Math.max(0, (ev.clientY - r.top)/r.height))];
+      const [px, py] = P(e); let j = -1, bestD = .15;
+      it.quad.forEach(([x,y], k) => { const dd = Math.hypot((x-px)*r.width, (y-py)*r.height) / Math.max(r.width, r.height); if (dd < bestD){ bestD = dd; j = k; } });
+      if (j < 0) return;
+      e.preventDefault(); svg.setPointerCapture(e.pointerId);
+      const mv = ev => { it.quad[j] = P(ev); paint(); };
+      const up = () => { svg.removeEventListener('pointermove', mv); svg.removeEventListener('pointerup', up); svg.removeEventListener('pointercancel', up); };
+      svg.addEventListener('pointermove', mv); svg.addEventListener('pointerup', up); svg.addEventListener('pointercancel', up);
+    });
+    return svg;
+  },
+  async export(prog){
+    const list = this.items.filter(it => it.url), pdf = val('sfmt') === 'pdf', out = pdf ? await PDFDocument.create() : null, jpgs = [];
+    const n = new Date(), p2 = x => String(x).padStart(2, '0'), name = `Scan_${n.getFullYear()}${p2(n.getMonth()+1)}${p2(n.getDate())}_${p2(n.getHours())}${p2(n.getMinutes())}`;
+    for (let i = 0; i < list.length; i++){
+      const c = await this.render(list[i], 2600), blob = await canvasBlob(c, 'image/jpeg', .88);
+      if (!pdf) jpgs.push([`${name}_${i+1}.jpg`, blob]);
+      else {
+        const img = await out.embedJpg(await blob.arrayBuffer()), land = c.width > c.height;
+        const P = val('spage') === 'a4' ? PAPERS[0] : this.paperOf(list[i]);
+        let W, H;
+        if (P) [W, H] = land ? [P[2], P[1]] : [P[1], P[2]];
+        else if (land){ H = 595.28; W = H*c.width/c.height; } else { W = 595.28; H = W*c.height/c.width; }
+        const s = Math.min(W/c.width, H/c.height), w = c.width*s, h = c.height*s;
+        out.addPage([W, H]).drawImage(img, {x:(W-w)/2, y:(H-h)/2, width:w, height:h});
+      }
+      prog((i+1)/list.length);
+    }
+    if (pdf) await download(await out.save(), `${name}.pdf`); else await zipOrSingle(jpgs, `${name}.zip`, 'image/jpeg');
+    return fill(tr('Done — {n} page(s) scanned.','Siap — {n} halaman di-scan.'),{n:list.length});
+  }
+};
+
 /* ================= UI WIRING ================= */
 let current = null, files = [], busy = false;
 
@@ -1261,7 +1499,8 @@ function renderToolChrome(){
   $('#go').textContent = t.btn();
   $('#picker').accept = t.accept === 'pdf' ? '.pdf,application/pdf' : t.accept === 'img' ? 'image/*' : '.pdf,application/pdf,image/*';
   $('#picker').multiple = !!t.multiple;
-  $('#dropTitle').textContent = t.multiple ? tr('Choose files','Pilih fail-fail') : tr('Choose file','Pilih fail');
+  $('#camRow').hidden = !t.camera; $('#camBtn').textContent = tr('📷 Take photo','📷 Ambil gambar');
+  $('#dropTitle').textContent = t.camera ? tr('Choose from gallery','Pilih dari galeri') : t.multiple ? tr('Choose files','Pilih fail-fail') : tr('Choose file','Pilih fail');
   const kinds = t.accept === 'pdf' ? 'PDF' : t.accept === 'img' ? 'JPG / PNG / WEBP' : tr('PDF or photo','PDF atau gambar');
   $('#dropHint').textContent = `${tr('or drag & drop here','atau seret & lepas di sini')} (${kinds})`;
 }
@@ -1280,7 +1519,7 @@ function showTool(k){
   $('#pages').hidden = true; $('#pages').innerHTML = '';
   $('#preview').hidden = true; $('#preview').innerHTML = '';
   $('#textout').hidden = true; $('#drop').hidden = false;
-  Ed.reset(); Org.items = [];
+  Ed.reset(); Org.items = []; Scan.items = []; Scan.tok++; $('#scanList').hidden = true;
   setStatus(''); drawFiles(); $('#outBtns').hidden = true; outbox = null;
   t.onShow && t.onShow();
   if (pendingShared){ const p = pendingShared; pendingShared = null; addFiles(p); }
@@ -1301,6 +1540,8 @@ $$('.lang button').forEach(b => b.addEventListener('click', () => setLang(b.data
 
 const drop = $('#drop');
 drop.onclick = () => $('#picker').click();
+$('#camBtn').onclick = () => $('#cam').click();
+$('#cam').onchange = e => { addFiles(e.target.files); e.target.value = ''; };
 drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); $('#picker').click(); } };
 $('#picker').onchange = e => { addFiles(e.target.files); e.target.value = ''; };
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
@@ -1365,7 +1606,8 @@ async function runTool(){
   } catch(err){ console.error(err); setStatus(err.message || tr('Something went wrong.','Ralat tak dijangka.'),'err'); }
   finally { busy = false; updateGo(); setTimeout(()=>setProg(null), 600); }
 }
-$('#go').onclick = runTool;
+const runShare = () => runTool().then(() => outbox && outbox.length && navigator.share({files:outbox}).catch(e => { if (e.name !== 'AbortError') $('#outBtns').scrollIntoView({behavior:'smooth', block:'center'}); }));
+$('#go').onclick = () => TOOLS[current].share ? runShare() : runTool();
 $('#shareOut').onclick = async () => {
   try { await navigator.share({files:outbox}); }
   catch(e){ if (e.name !== 'AbortError'){ setStatus(tr('Sharing is blocked here, so the file was downloaded instead.','Share disekat di sini, jadi fail dimuat turun.'),'warn'); $('#saveOut').click(); } }
@@ -1388,7 +1630,7 @@ document.addEventListener('click', e => {
   if (a === 'arm') Ed.setArm(b.dataset.k);
   else if (a === 'disarm'){ Ed.arm = null; Ed.drawBar(); }
   else if (a === 'save') runTool();
-  else if (a === 'share') runTool().then(() => outbox && outbox.length && navigator.share({files:outbox}).catch(e => { if (e.name !== 'AbortError') $('#outBtns').scrollIntoView({behavior:'smooth', block:'center'}); }));
+  else if (a === 'share') runShare();
   else if (a === 'allpages') Ed.copyToAll();
   else if (a === 'newsig') Sig.open(() => { Ed.arm = 'sign'; Ed.drawBar(); });
   else if (a === 'orgreset') Org.reset();
