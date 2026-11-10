@@ -106,6 +106,20 @@ main{max-width:1140px;margin:0 auto;padding-block:28px 60px;padding-left:max(16p
 .pg .act{display:flex;justify-content:center;gap:4px;margin-top:4px;flex-wrap:wrap}
 /* scanner */
 .camrow{margin-bottom:10px}
+#camView{position:fixed;inset:0;z-index:100;background:#000;display:flex;flex-direction:column}
+#camView[hidden]{display:none}
+.camstage{position:relative;flex:1;min-height:0;overflow:hidden}
+#camVid,#camOv{position:absolute;inset:0;width:100%;height:100%}
+#camVid{object-fit:contain}
+.camhint{position:absolute;top:calc(12px + env(safe-area-inset-top, 0px));left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:13px;padding:6px 12px;border-radius:999px;white-space:nowrap}
+.camflash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .3s}
+.camflash.on{opacity:.8;transition:none}
+.cambar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 22px calc(18px + env(safe-area-inset-bottom, 0px))}
+.camx,.camdone{background:none;border:0;color:#fff;font:600 16px system-ui,sans-serif;min-width:80px;padding:10px;cursor:pointer}
+.camx{text-align:left;font-size:22px}
+.camdone{text-align:right}
+.shutter{width:72px;height:72px;flex:none;border-radius:50%;background:#fff;border:5px solid #20c997;box-shadow:inset 0 0 0 3px #000;cursor:pointer}
+.shutter:active{transform:scale(.93)}
 .scanlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:14px}
 .scard{border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--bg)}
 .scard.edit{grid-column:1/-1}
@@ -264,6 +278,10 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:20px}
     </div>
   </section>
 </main>
+<div id="camView" hidden>
+  <div class="camstage"><video id="camVid" playsinline muted autoplay></video><canvas id="camOv"></canvas><div class="camhint" id="camHint"></div><div class="camflash" id="camFlash"></div></div>
+  <div class="cambar"><button type="button" class="camx" id="camX" aria-label="Close">✕</button><button type="button" class="shutter" id="camSnap" aria-label="Capture"></button><button type="button" class="camdone" id="camDone"></button></div>
+</div>
 <footer data-en="Built with pdf-lib, PDF.js &amp; JSZip" data-ms="Dibina dengan pdf-lib, PDF.js &amp; JSZip"></footer>
 
 <!-- signature creator -->
@@ -1301,7 +1319,7 @@ async function decodeImg(file, max){
 }
 const Scan = {
   items:[], tok:0,
-  async add(list){
+  async add(list, quad){
     const cvLoaded = cvP && window.cv && window.cv.Mat;
     if (!cvLoaded) setStatus(tr('Loading scan engine (first time only)…','Memuatkan enjin scan (kali pertama sahaja)…'));
     for (const file of list){
@@ -1310,7 +1328,7 @@ const Scan = {
       try {
         it.prev = await decodeImg(file, 1200); it.prevUrl = it.prev.toDataURL('image/jpeg', .8); this.draw();
         const cv = await loadCv(); setStatus('');
-        it.quad = this.detect(cv, it.prev) || [[0,0],[1,0],[1,1],[0,1]];
+        it.quad = quad || this.detect(cv, it.prev) || [[0,0],[1,0],[1,1],[0,1]];
         await this.update(it);
       } catch(e){ console.error(e); setStatus(e.message || String(e), 'err'); if (!it.prev) this.items = this.items.filter(x => x !== it); }
       it.busy = false; this.draw(); updateGo();
@@ -1469,6 +1487,63 @@ const Scan = {
   }
 };
 
+/* ---- Live camera: green box follows the paper, shutter keeps only what's inside ---- */
+const Cam = {
+  stream:null, raf:0, quad:null, seen:0, last:0, small:null,
+  async open(){
+    try { this.stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}, audio:false}); }
+    catch(e){ setStatus(tr('Camera not allowed — opening the phone camera instead.','Kamera tak dibenarkan — guna kamera phone.'),'warn'); $('#cam').click(); return; }
+    const v = $('#camVid'); v.srcObject = this.stream; v.play().catch(()=>{});
+    $('#camView').hidden = false; document.body.style.overflow = 'hidden'; this.count();
+    this.hint(tr('Loading scan engine…','Memuatkan enjin scan…'));
+    loadCv().then(() => this.stream && this.loop(), e => this.hint(e.message));
+  },
+  close(){
+    cancelAnimationFrame(this.raf); this.raf = 0; this.quad = null;
+    if (this.stream) this.stream.getTracks().forEach(t => t.stop());
+    this.stream = null; $('#camView').hidden = true; document.body.style.overflow = '';
+  },
+  hint(t){ $('#camHint').textContent = t; },
+  count(){ const n = Scan.items.length; $('#camDone').textContent = n ? fill(tr('Done ({n})','Siap ({n})'),{n}) : tr('Done','Siap'); },
+  loop(){
+    const v = $('#camVid'), sm = this.small ||= document.createElement('canvas');
+    const tick = now => {
+      if (!this.stream) return;
+      this.raf = requestAnimationFrame(tick);
+      if (now - this.last < 120 || !v.videoWidth) return;
+      this.last = now;
+      const s = 480/Math.max(v.videoWidth, v.videoHeight); sm.width = Math.round(v.videoWidth*s); sm.height = Math.round(v.videoHeight*s);
+      sm.getContext('2d').drawImage(v, 0, 0, sm.width, sm.height);
+      let q = null; try { q = Scan.detect(window.cv, sm); } catch {}
+      if (q){ this.quad = this.quad ? this.quad.map((p, i) => [p[0] + (q[i][0]-p[0])*.5, p[1] + (q[i][1]-p[1])*.5]) : q; this.seen = now; }   // smooth the jitter
+      else if (now - this.seen > 700) this.quad = null;
+      this.paint();
+      this.hint(this.quad ? tr('Paper found — tap to capture','Kertas dikesan — tekan untuk ambil') : tr('Point at the paper','Halakan ke kertas'));
+    };
+    this.raf = requestAnimationFrame(tick);
+  },
+  paint(){
+    const v = $('#camVid'), c = $('#camOv'), r = c.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+    const cw = Math.round(r.width*dpr), ch = Math.round(r.height*dpr);
+    if (c.width !== cw || c.height !== ch){ c.width = cw; c.height = ch; }
+    const x = c.getContext('2d'); x.clearRect(0, 0, cw, ch);
+    if (!this.quad || !v.videoWidth) return;
+    const k = Math.min(cw/v.videoWidth, ch/v.videoHeight), w = v.videoWidth*k, h = v.videoHeight*k, ox = (cw-w)/2, oy = (ch-h)/2;
+    x.beginPath(); this.quad.forEach(([a, b], i) => x[i ? 'lineTo' : 'moveTo'](ox + a*w, oy + b*h)); x.closePath();
+    x.fillStyle = 'rgba(32,201,151,.22)'; x.fill(); x.lineWidth = 3*dpr; x.strokeStyle = '#20c997'; x.stroke();
+  },
+  // shortcut: captures the video frame (up to 1920px), not the full sensor photo; use ImageCapture.takePhoto() if text comes out too soft.
+  async snap(){
+    const v = $('#camVid'); if (!v.videoWidth) return;
+    const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
+    const quad = this.quad && this.quad.map(p => [...p]), fl = $('#camFlash');
+    fl.classList.add('on'); requestAnimationFrame(() => fl.classList.remove('on'));
+    const blob = await canvasBlob(c, 'image/jpeg', .92);
+    Scan.add([new File([blob], `scan_${Date.now()}.jpg`, {type:'image/jpeg'})], quad);
+    this.count();
+  }
+};
+
 /* ================= UI WIRING ================= */
 let current = null, files = [], busy = false;
 
@@ -1490,7 +1565,7 @@ $('#grid').addEventListener('click', e => { const c = e.target.closest('.card');
 $('#back').onclick = $('#home').onclick = () => { location.hash = ''; };
 window.addEventListener('hashchange', route);
 function route(){ const k = location.hash.slice(1); k && TOOLS[k] ? showTool(k) : showHome(); }
-function showHome(){ $('#viewTool').hidden = true; $('#viewHome').hidden = false; current = null; Sig.close(); }
+function showHome(){ Cam.close(); $('#viewTool').hidden = true; $('#viewHome').hidden = false; current = null; Sig.close(); }
 
 function acceptOk(t, f){ return t.accept === 'pdf' ? isPdf(f) : t.accept === 'img' ? isImg(f) : (isPdf(f) || isImg(f)); }
 function renderToolChrome(){
@@ -1513,6 +1588,7 @@ function renderOpts(keep){
   }
 }
 function showTool(k){
+  Cam.close();
   current = k; files = []; const t = TOOLS[k];
   $('#viewHome').hidden = true; $('#viewTool').hidden = false;
   renderToolChrome(); renderOpts(false);
@@ -1540,7 +1616,9 @@ $$('.lang button').forEach(b => b.addEventListener('click', () => setLang(b.data
 
 const drop = $('#drop');
 drop.onclick = () => $('#picker').click();
-$('#camBtn').onclick = () => $('#cam').click();
+$('#camBtn').onclick = () => navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? Cam.open() : $('#cam').click();
+$('#camSnap').onclick = () => Cam.snap();
+$('#camX').onclick = $('#camDone').onclick = () => Cam.close();
 $('#cam').onchange = e => { addFiles(e.target.files); e.target.value = ''; };
 drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); $('#picker').click(); } };
 $('#picker').onchange = e => { addFiles(e.target.files); e.target.value = ''; };
