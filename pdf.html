@@ -1317,9 +1317,12 @@ async function decodeImg(file, max){
   c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); bmp.close && bmp.close();
   return c;
 }
+// preview box (fractions) -> same box on a photo of another shape; the preview is the centre of the sensor
+const mapQuad = (q, av, ap) => (av < 1) !== (ap < 1) ? null
+  : ap > av ? q.map(([x, y]) => [.5 + (x-.5)*av/ap, y]) : q.map(([x, y]) => [x, .5 + (y-.5)*ap/av]);
 const Scan = {
   items:[], tok:0,
-  async add(list, quad){
+  async add(list, live){   // live = {quad, aspect} from the camera preview
     const cvLoaded = cvP && window.cv && window.cv.Mat;
     if (!cvLoaded) setStatus(tr('Loading scan engine (first time only)…','Memuatkan enjin scan (kali pertama sahaja)…'));
     for (const file of list){
@@ -1328,7 +1331,9 @@ const Scan = {
       try {
         it.prev = await decodeImg(file, 1200); it.prevUrl = it.prev.toDataURL('image/jpeg', .8); this.draw();
         const cv = await loadCv(); setStatus('');
-        it.quad = quad || this.detect(cv, it.prev) || [[0,0],[1,0],[1,1],[0,1]];
+        // the HD photo can be framed wider than the preview: map the live box onto it, then re-find the paper near it
+        const hint = live && live.quad && mapQuad(live.quad, live.aspect, it.prev.width/it.prev.height);
+        it.quad = this.detect(cv, it.prev, hint) || hint || [[0,0],[1,0],[1,1],[0,1]];
         await this.update(it);
       } catch(e){ console.error(e); setStatus(e.message || String(e), 'err'); if (!it.prev) this.items = this.items.filter(x => x !== it); }
       it.busy = false; this.draw(); updateGo();
@@ -1501,7 +1506,7 @@ const Scan = {
     const list = this.items.filter(it => it.url), pdf = val('sfmt') === 'pdf', out = pdf ? await PDFDocument.create() : null, jpgs = [];
     const n = new Date(), p2 = x => String(x).padStart(2, '0'), name = `Scan_${n.getFullYear()}${p2(n.getMonth()+1)}${p2(n.getDate())}_${p2(n.getHours())}${p2(n.getMinutes())}`;
     for (let i = 0; i < list.length; i++){
-      const c = await this.render(list[i], 2600), blob = await canvasBlob(c, 'image/jpeg', .88);
+      const c = await this.render(list[i], 3200), blob = await canvasBlob(c, 'image/jpeg', .88);
       if (!pdf) jpgs.push([`${name}_${i+1}.jpg`, blob]);
       else {
         const img = await out.embedJpg(await blob.arrayBuffer()), land = c.width > c.height;
@@ -1523,7 +1528,8 @@ const Scan = {
 const Cam = {
   stream:null, raf:0, quad:null, seen:0, last:0, small:null,
   async open(){
-    try { this.stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}, audio:false}); }
+    try { this.stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}, width:{ideal:3840}, height:{ideal:2160}}, audio:false});
+      try { await this.stream.getVideoTracks()[0].applyConstraints({advanced:[{focusMode:'continuous'}]}); } catch {} }
     catch(e){ setStatus(tr('Camera not allowed — opening the phone camera instead.','Kamera tak dibenarkan — guna kamera phone.'),'warn'); $('#cam').click(); return; }
     const v = $('#camVid'); v.srcObject = this.stream; v.play().catch(()=>{});
     $('#camView').hidden = false; document.body.style.overflow = 'hidden'; this.count();
@@ -1576,14 +1582,27 @@ const Cam = {
     x.beginPath(); Q.forEach(([a, b], i) => x[i ? 'lineTo' : 'moveTo'](ox + a*w, oy + b*h)); x.closePath();
     x.fillStyle = 'rgba(32,201,151,.22)'; x.fill(); x.lineWidth = 3*dpr; x.strokeStyle = '#20c997'; x.stroke();
   },
-  // shortcut: captures the video frame (up to 1920px), not the full sensor photo; use ImageCapture.takePhoto() if text comes out too soft.
+  // Full-resolution photo from the sensor (ImageCapture); falls back to the preview frame where that's not supported
   async snap(){
-    const v = $('#camVid'); if (!v.videoWidth) return;
-    const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
-    const quad = this.quad && this.quad.map(p => [...p]), fl = $('#camFlash');
+    const v = $('#camVid'); if (!v.videoWidth || this.snapping) return;
+    this.snapping = true; $('#camSnap').disabled = true;
+    const live = {quad: this.target && this.target.map(p => [...p]), aspect: v.videoWidth/v.videoHeight}, fl = $('#camFlash');
     fl.classList.add('on'); requestAnimationFrame(() => fl.classList.remove('on'));
-    const blob = await canvasBlob(c, 'image/jpeg', .92);
-    Scan.add([new File([blob], `scan_${Date.now()}.jpg`, {type:'image/jpeg'})], quad);
+    let blob = null;
+    try {
+      if (window.ImageCapture){
+        this.hint(tr('Taking HD photo…','Ambil gambar HD…'));
+        const ic = this.ic && this.ic.track === this.stream.getVideoTracks()[0] ? this.ic : (this.ic = new ImageCapture(this.stream.getVideoTracks()[0]));
+        const caps = await ic.getPhotoCapabilities().catch(() => null);
+        blob = await ic.takePhoto(caps && caps.imageWidth && caps.imageWidth.max ? {imageWidth: caps.imageWidth.max, imageHeight: caps.imageHeight.max} : {});
+      }
+    } catch(e){ console.warn('takePhoto', e); blob = null; }
+    if (!blob){
+      const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
+      blob = await canvasBlob(c, 'image/jpeg', .95);
+    }
+    this.snapping = false; $('#camSnap').disabled = false;
+    Scan.add([new File([blob], `scan_${Date.now()}.jpg`, {type:'image/jpeg'})], live);
     this.count();
   }
 };
