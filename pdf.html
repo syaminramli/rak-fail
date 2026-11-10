@@ -1334,34 +1334,66 @@ const Scan = {
       it.busy = false; this.draw(); updateGo();
     }
   },
-  // Largest 4-corner shape in the photo, as fractions of width/height (null = not found)
-  detect(cv, c){
-    const s = Math.min(1, 500/Math.max(c.width, c.height)), t = document.createElement('canvas');
+  // Find the paper: contours -> straight sides -> try 4-side combos -> keep the quad that is bright inside and sits on real edges.
+  detect(cv, c, prev){
+    const s = Math.min(1, 400/Math.max(c.width, c.height)), t = document.createElement('canvas');
     t.width = Math.round(c.width*s); t.height = Math.round(c.height*s); t.getContext('2d').drawImage(c, 0, 0, t.width, t.height);
-    const W = t.width, H = t.height, mats = [], M = m => (mats.push(m), m);
-    let best = null, bestA = W*H*0.12;
+    const W = t.width, H = t.height, mats = [], M = m => (mats.push(m), m), cands = [];
+    const area = q => Math.abs(q.reduce((a, p, i) => { const n = q[(i+1)%4]; return a + p[0]*n[1] - n[0]*p[1]; }, 0))/2;
+    const angOk = q => q.every((p, i) => { const a = q[(i+3)%4], b = q[(i+1)%4], v1 = [a[0]-p[0], a[1]-p[1]], v2 = [b[0]-p[0], b[1]-p[1]];
+      return Math.abs((v1[0]*v2[0] + v1[1]*v2[1]) / (Math.hypot(...v1)*Math.hypot(...v2))) < .6; });   // corners 53°–127°
+    const at = (m, x, y) => m.data[Math.min(H-1, Math.max(0, Math.round(y)))*W + Math.min(W-1, Math.max(0, Math.round(x)))] > 0;
+    const gv = (m, x, y) => m.data[Math.min(H-1, Math.max(0, Math.round(y)))*W + Math.min(W-1, Math.max(0, Math.round(x)))];
+    // per side: share of points that are on an edge AND brighter just inside than just outside (a real paper border)
+    const support = (e, g, q) => { const cx = q.reduce((a, p) => a + p[0], 0)/4, cy = q.reduce((a, p) => a + p[1], 0)/4;
+      return q.map((a, i) => { const b = q[(i+1)%4], l = Math.hypot(b[0]-a[0], b[1]-a[1]) || 1; let nx = -(b[1]-a[1])/l, ny = (b[0]-a[0])/l;
+        const mx = (a[0]+b[0])/2, my = (a[1]+b[1])/2; if (nx*(cx-mx) + ny*(cy-my) < 0){ nx = -nx; ny = -ny; }
+        let h = 0; for (let k = 0; k < 40; k++){ const u = .05 + .9*k/39, x = a[0] + (b[0]-a[0])*u, y = a[1] + (b[1]-a[1])*u;
+          if (at(e, x, y) && gv(g, x + nx*4, y + ny*4) - gv(g, x - nx*4, y - ny*4) > 12) h++; }
+        return h/40; }); };
+    const fill = (m, q) => { let h = 0; for (let i = 0; i < 20; i++) for (let j = 0; j < 20; j++){ const u = (i+.5)/20, v = (j+.5)/20;
+      h += at(m, (1-v)*((1-u)*q[0][0] + u*q[1][0]) + v*((1-u)*q[3][0] + u*q[2][0]), (1-v)*((1-u)*q[0][1] + u*q[1][1]) + v*((1-u)*q[3][1] + u*q[2][1])); } return h/400; };
+    const isect = ([[x1,y1],[x2,y2]], [[x3,y3],[x4,y4]]) => { const d = (x1-x2)*(y3-y4) - (y1-y2)*(x3-x4); if (Math.abs(d) < 1e-6) return null;
+      const u = ((x1-x3)*(y3-y4) - (y1-y3)*(x3-x4))/d; return [x1 + u*(x2-x1), y1 + u*(y2-y1)]; };
+    const ang = ([a, b]) => Math.atan2(b[1]-a[1], b[0]-a[0]), turn = (s1, s2) => Math.abs(((ang(s1) - ang(s2) + Math.PI*3) % (Math.PI*2)) - Math.PI);
     try {
-      const g = M(new cv.Mat()), edges = M(new cv.Mat()), otsu = M(new cv.Mat());
+      const g = M(new cv.Mat()), e = M(new cv.Mat()), es = M(new cv.Mat()), ed = M(new cv.Mat()), raw = M(new cv.Mat()), bin = M(new cv.Mat());
       cv.cvtColor(M(cv.imread(t)), g, cv.COLOR_RGBA2GRAY);
-      cv.morphologyEx(g, g, cv.MORPH_CLOSE, M(cv.Mat.ones(9, 9, cv.CV_8U)));   // wipe out the text, keep the paper
+      cv.morphologyEx(g, g, cv.MORPH_CLOSE, M(cv.Mat.ones(7, 7, cv.CV_8U)));   // wipe out the text, keep the paper
       cv.GaussianBlur(g, g, new cv.Size(5, 5), 0);
-      cv.Canny(g, edges, 30, 100); cv.dilate(edges, edges, M(cv.Mat.ones(3, 3, cv.CV_8U)));
-      cv.threshold(g, otsu, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
-      for (const m of [edges, otsu]){
-        const cs = M(new cv.MatVector()); cv.findContours(m, cs, M(new cv.Mat()), cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+      cv.Canny(g, e, 20, 60); cv.dilate(e, es, M(cv.Mat.ones(7, 7, cv.CV_8U)));   // es: real edges only (side support)
+      cv.rectangle(e, new cv.Point(0, 0), new cv.Point(W-1, H-1), new cv.Scalar(255), 1); cv.dilate(e, ed, M(cv.Mat.ones(3, 3, cv.CV_8U)));   // frame closes papers cut by the screen edge
+      cv.threshold(g, raw, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU); cv.morphologyEx(raw, bin, cv.MORPH_OPEN, M(cv.Mat.ones(5, 5, cv.CV_8U)));
+      for (const [m, mode] of [[bin, cv.RETR_EXTERNAL], [ed, cv.RETR_LIST]]){
+        const cs = M(new cv.MatVector()); cv.findContours(m, cs, M(new cv.Mat()), mode, cv.CHAIN_APPROX_SIMPLE);
         for (let i = 0; i < cs.size(); i++){
-          const hull = M(new cv.Mat()); cv.convexHull(M(cs.get(i)), hull);
-          const a = cv.contourArea(hull); if (a <= bestA) continue;
-          for (const eps of [.02, .04, .06]){
-            const ap = M(new cv.Mat()); cv.approxPolyDP(hull, ap, eps*cv.arcLength(hull, true), true);
-            if (ap.rows === 4){ bestA = a; best = [0,1,2,3].map(j => [ap.data32S[j*2], ap.data32S[j*2+1]]); break; }
+          const ct = M(cs.get(i)); if (cv.contourArea(ct) < W*H*.1) continue;
+          const ap = M(new cv.Mat()); cv.approxPolyDP(ct, ap, .015*cv.arcLength(ct, true), true);
+          const P = []; for (let k = 0; k < ap.rows; k++) P.push([ap.data32S[k*2], ap.data32S[k*2+1]]);
+          if (P.length < 4) continue;
+          const runs = [];   // merge nearly straight neighbours into one side
+          P.forEach((p, k) => { const sg = [p, P[(k+1)%P.length]]; if (runs.length && turn(sg, runs[runs.length-1]) < .21) runs[runs.length-1] = [runs[runs.length-1][0], sg[1]]; else runs.push(sg); });
+          if (runs.length > 1 && turn(runs[0], runs[runs.length-1]) < .21) runs[0] = [runs.pop()[0], runs[0][1]];
+          if (runs.length < 4) continue;
+          const len = r => Math.hypot(r[1][0]-r[0][0], r[1][1]-r[0][1]);
+          const top = runs.map((r, k) => k).sort((a, b) => len(runs[b]) - len(runs[a])).slice(0, 7).sort((a, b) => a - b);
+          for (let a = 0; a < top.length; a++) for (let b = a+1; b < top.length; b++) for (let c2 = b+1; c2 < top.length; c2++) for (let d = c2+1; d < top.length; d++){
+            const L = [a, b, c2, d].map(k => runs[top[k]]), q = L.map((l, k) => isect(L[(k+3)%4], l));
+            if (q.some(p => !p || p[0] < -.05*W || p[1] < -.05*H || p[0] > 1.05*W || p[1] > 1.05*H)) continue;
+            q.forEach(p => { p[0] = Math.min(W-1, Math.max(0, p[0])); p[1] = Math.min(H-1, Math.max(0, p[1])); });
+            const qa = area(q); if (qa < W*H*.1 || qa > W*H*.97 || !angOk(q)) continue;
+            const f = fill(raw, q); if (f < .85) continue;
+            const sv = support(es, g, q), mean = sv.reduce((a, v) => a + v, 0)/4; if (Math.min(...sv) < .25 || mean < .5) continue;
+            cands.push({q, score: qa*f*mean*mean});
           }
         }
       }
     } finally { mats.forEach(m => m.delete()); }
-    if (!best) return null;
-    const cx = best.reduce((a, p) => a + p[0], 0)/4, cy = best.reduce((a, p) => a + p[1], 0)/4;
-    return orderQuad(best).map(([x,y]) => [(x + (cx-x)*.01)/W, (y + (cy-y)*.01)/H]);   // 1% inward so no table edge sneaks in
+    if (!cands.length) return null;
+    const norm = q => orderQuad(q).map(([x, y]) => [x/W, y/H]), qd = (A, B) => A.reduce((a, p, i) => a + Math.hypot(p[0]-B[i][0], p[1]-B[i][1]), 0)/4;
+    cands.forEach(c => { c.n = norm(c.q); if (prev && qd(c.n, prev) < .05) c.score *= 1.5; });   // stick with the paper we were already following
+    const q = cands.sort((a, b) => b.score - a.score)[0].n, cx = q.reduce((a, p) => a + p[0], 0)/4, cy = q.reduce((a, p) => a + p[1], 0)/4;
+    return q.map(([x, y]) => [x + (cx-x)*.01, y + (cy-y)*.01]);   // 1% inward so no table edge sneaks in
   },
   // Real width/height of the paper. Zhang & He, "Whiteboard scanning and image enhancement" — undoes the camera's perspective.
   ratio(it){
@@ -1505,20 +1537,32 @@ const Cam = {
   },
   hint(t){ $('#camHint').textContent = t; },
   count(){ const n = Scan.items.length; $('#camDone').textContent = n ? fill(tr('Done ({n})','Siap ({n})'),{n}) : tr('Done','Siap'); },
+  // detect ~12x/s; draw every frame, gliding toward the latest result so the box feels instant
   loop(){
     const v = $('#camVid'), sm = this.small ||= document.createElement('canvas');
+    this.target = null; this.shown = null; this.pend = null; this.pendN = 0;
+    const qd = (A, B) => A.reduce((a, p, i) => a + Math.hypot(p[0]-B[i][0], p[1]-B[i][1]), 0)/4;
     const tick = now => {
       if (!this.stream) return;
       this.raf = requestAnimationFrame(tick);
-      if (now - this.last < 120 || !v.videoWidth) return;
-      this.last = now;
-      const s = 480/Math.max(v.videoWidth, v.videoHeight); sm.width = Math.round(v.videoWidth*s); sm.height = Math.round(v.videoHeight*s);
-      sm.getContext('2d').drawImage(v, 0, 0, sm.width, sm.height);
-      let q = null; try { q = Scan.detect(window.cv, sm); } catch {}
-      if (q){ this.quad = this.quad ? this.quad.map((p, i) => [p[0] + (q[i][0]-p[0])*.5, p[1] + (q[i][1]-p[1])*.5]) : q; this.seen = now; }   // smooth the jitter
-      else if (now - this.seen > 700) this.quad = null;
-      this.paint();
-      this.hint(this.quad ? tr('Paper found — tap to capture','Kertas dikesan — tekan untuk ambil') : tr('Point at the paper','Halakan ke kertas'));
+      if (now - this.last > (this.gap || 80) && v.videoWidth){
+        this.last = now;
+        const s = 400/Math.max(v.videoWidth, v.videoHeight); sm.width = Math.round(v.videoWidth*s); sm.height = Math.round(v.videoHeight*s);
+        sm.getContext('2d').drawImage(v, 0, 0, sm.width, sm.height);
+        let q = null; const t0 = performance.now(); try { q = Scan.detect(window.cv, sm, this.target); } catch {}
+        this.gap = Math.max(80, (performance.now() - t0)*1.5);   // slow phones: detect less often, keep the screen smooth
+        if (q){
+          this.seen = now;
+          // a very different shape must show up twice in a row before the box jumps to it
+          if (!this.target || qd(q, this.target) < .08){ this.target = q; this.pendN = 0; }
+          else if (this.pend && qd(q, this.pend) < .08 && ++this.pendN >= 2){ this.target = q; this.pendN = 0; }
+          else { this.pend = q; this.pendN = Math.max(1, this.pendN); }
+        } else if (now - this.seen > 500) this.target = null;
+        this.hint(this.target ? tr('Paper found — tap to capture','Kertas dikesan — tekan untuk ambil') : tr('Point at the paper','Halakan ke kertas'));
+      }
+      if (!this.target) this.shown = null;
+      else this.shown = this.shown ? this.shown.map((p, i) => [p[0] + (this.target[i][0]-p[0])*.35, p[1] + (this.target[i][1]-p[1])*.35]) : this.target.map(p => [...p]);
+      this.quad = this.target; this.paint();
     };
     this.raf = requestAnimationFrame(tick);
   },
@@ -1527,9 +1571,9 @@ const Cam = {
     const cw = Math.round(r.width*dpr), ch = Math.round(r.height*dpr);
     if (c.width !== cw || c.height !== ch){ c.width = cw; c.height = ch; }
     const x = c.getContext('2d'); x.clearRect(0, 0, cw, ch);
-    if (!this.quad || !v.videoWidth) return;
+    const Q = this.shown; if (!Q || !v.videoWidth) return;
     const k = Math.min(cw/v.videoWidth, ch/v.videoHeight), w = v.videoWidth*k, h = v.videoHeight*k, ox = (cw-w)/2, oy = (ch-h)/2;
-    x.beginPath(); this.quad.forEach(([a, b], i) => x[i ? 'lineTo' : 'moveTo'](ox + a*w, oy + b*h)); x.closePath();
+    x.beginPath(); Q.forEach(([a, b], i) => x[i ? 'lineTo' : 'moveTo'](ox + a*w, oy + b*h)); x.closePath();
     x.fillStyle = 'rgba(32,201,151,.22)'; x.fill(); x.lineWidth = 3*dpr; x.strokeStyle = '#20c997'; x.stroke();
   },
   // shortcut: captures the video frame (up to 1920px), not the full sensor photo; use ImageCapture.takePhoto() if text comes out too soft.
